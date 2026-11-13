@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#15232b">
+  <meta name="description" content="從 ASR5000 F28377S 原始碼理解控制演算法。追蹤 CPU／CLA 時序、PI 補償、數位濾波、DDS 波形與保護，搭配互動實驗與可追溯程式來源。">
+  <title>ASR5000 控制工程筆記 · F28377S</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳至主要內容</a>
+  <aside class="sidebar" id="sidebar" aria-label="課程導覽">
+    <button class="icon-button mobile-sidebar-close" id="nav-close" aria-label="關閉課程導覽">✕</button>
+    <a class="brand" href="#/" aria-label="ASR5000 教學首頁"><span class="brand-icon">∿</span><span>ASR<span class="brand-light">5000</span><small>CONTROL ENGINEERING</small></span></a>
+    <div class="edition"><span class="status-dot"></span> F28377S <span class="edition-line">/</span> LEGACY CODE STUDY</div>
+    <button class="search-button" id="search-open"><span>⌕</span> 搜尋筆記與函式 <kbd>Ctrl K</kbd></button>
+    <nav id="navigation"></nav>
+    <div class="sidebar-bottom"><div class="progress-label"><span>你的閱讀進度</span><span id="progress-count">0 / 8</span></div><div class="progress-track"><span id="progress-fill"></span></div><p>進度僅儲存在此瀏覽器</p><a href="https://github.com/linwuyen/377_Old_tech" target="_blank" rel="noopener noreferrer">網站原始碼 <span>↗</span></a></div>
+  </aside>
+  <div class="nav-overlay" id="nav-overlay" hidden></div>
+  <div class="workspace">
+    <header class="topbar"><div><button id="menu-toggle" class="icon-button mobile-menu" aria-label="開啟課程導覽" aria-expanded="false" aria-controls="sidebar">☰</button><span class="breadcrumb">工程筆記 <span>/</span> <strong id="breadcrumb-current">學習總覽</strong></span></div><a class="source-header" href="https://github.com/linwuyen/ASR5K_Old/tree/5262007b56d420c74ac892692ea4d3969a3e3992/ASR5K_28377/TRACE_ASR5000_F28377S" target="_blank" rel="noopener noreferrer"><span class="source-dot"></span> 對照原始碼 ↗</a></header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="footer"><span>ASR5000 · 377 OLD TECH</span><span>以程式碼為依據，從實作理解控制。</span><a href="#/sources">版本與分析範圍 ↗</a></footer>
+  </div>
+  <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-heading"><h2 id="search-title">搜尋工程筆記</h2><button id="search-close" class="icon-button" aria-label="關閉搜尋">✕</button></div><label class="sr-only" for="search-input">輸入章節、關鍵字或函式名稱</label><input id="search-input" type="search" placeholder="試試 runPI、CLA、取樣頻率…" autocomplete="off"><div id="search-results" aria-live="polite"></div><p class="search-hint">搜尋章節內文與程式符號 · Esc 關閉</p></dialog>
+  <noscript><div class="noscript">本教學網站需要啟用 JavaScript，才能顯示章節與操作實驗。<a href="https://github.com/linwuyen/377_Old_tech">前往網站原始碼</a></div></noscript>
+</body>
+</html>

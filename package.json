@@ -1,0 +1,8 @@
+{
+  "name": "asr5000-control-notes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Source-grounded Traditional Chinese control engineering tutorials for ASR5000 F28377S",
+  "scripts": { "test": "node --test lab.test.js", "check": "node scripts/check.mjs", "dev": "node scripts/serve.mjs" }
+}
