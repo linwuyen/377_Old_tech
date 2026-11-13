@@ -8,6 +8,8 @@
   <title>ASR5000 控制工程筆記 · F28377S</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="./deep-content.css">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
@@ -27,6 +29,7 @@
     <footer class="footer"><span>ASR5000 · 377 OLD TECH</span><span>以程式碼為依據，從實作理解控制。</span><a href="#/sources">版本與分析範圍 ↗</a></footer>
   </div>
   <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-heading"><h2 id="search-title">搜尋工程筆記</h2><button id="search-close" class="icon-button" aria-label="關閉搜尋">✕</button></div><label class="sr-only" for="search-input">輸入章節、關鍵字或函式名稱</label><input id="search-input" type="search" placeholder="試試 runPI、CLA、取樣頻率…" autocomplete="off"><div id="search-results" aria-live="polite"></div><p class="search-hint">搜尋章節內文與程式符號 · Esc 關閉</p></dialog>
+  <dialog id="diagram-dialog" class="diagram-dialog" aria-labelledby="diagram-title"><div class="search-heading"><h2 id="diagram-title">控制迴路方塊圖</h2><button id="diagram-close" class="icon-button" aria-label="關閉放大方塊圖">✕</button></div><div id="diagram-detail"></div></dialog>
   <noscript><div class="noscript">本教學網站需要啟用 JavaScript，才能顯示章節與操作實驗。<a href="https://github.com/linwuyen/377_Old_tech">前往網站原始碼</a></div></noscript>
 </body>
 </html>

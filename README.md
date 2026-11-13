@@ -17,6 +17,8 @@
 
 另含 PI 互動實驗、全文搜尋、瀏覽器閱讀進度、原碼索引、章節目錄與閱讀練習。
 
+控制章節 03–06 深入版共有 **6 張可放大方塊圖、60 個排版公式、30 段附原檔行號的程式碼**。由連續模型推導離散方程，再依實際執行順序解說；全站包含 218 處固定版本來源引文。
+
 ## 來源與限制
 
 - 原始儲存庫：[linwuyen/ASR5K_Old](https://github.com/linwuyen/ASR5K_Old)
@@ -30,14 +32,14 @@
 
 ## 本機預覽與驗證
 
-需要 Node.js 22 或更新版本，沒有 npm 相依套件。
+需要 Node.js 22 或更新版本。執行與預覽直接使用已隨站保存的 KaTeX 0.19.1 模組、CSS 與字型，不需先安裝套件。只有重新產生第三方資產時需要 `npm ci` 及 `npm run vendor:math`。
 
 ```sh
 npm run dev
 # http://127.0.0.1:4173
 npm test
 npm run check
-# 同時驗證引文檔案與行號（先取得來源版本）
+# 同時驗證引文行號及逐段程式碼與原始檔一致（先取得來源版本）
 node scripts/check.mjs /absolute/path/to/TRACE_ASR5000_F28377S
 ```
 
@@ -46,10 +48,13 @@ node scripts/check.mjs /absolute/path/to/TRACE_ASR5000_F28377S
 此站為純靜態網站。GitHub Pages 使用 `main` 分支的根目錄，`.nojekyll` 停用 Jekyll 處理。推送到 `main` 後，GitHub 自動更新網站。
 
 - `lessons/system.js`：架構、時序、保護與驗證。
-- `lessons/control.js`：控制迴路、PI、濾波與波形。
+- `lessons/control.js`：彙整四個控制章節。
+- `lessons/feedback.js`、`pi.js`、`filters.js`、`waveforms.js`：深入內容、推導與逐段原碼。
+- `lessons/diagrams.js`：六張 SVG 方塊圖；`lessons/shared.js`：公式與原碼排版。
 - `lab.js`：純函式數值模型與實驗 UI；`lab.test.js`：數值行為驗證。
 - `app.js`：頁面路由、全文搜尋、進度與導覽。
-- `styles.css`、`index.html`：響應式介面。
+- `styles.css`、`deep-content.css`、`index.html`：響應式介面、圖表與公式排版。
+- `vendor/katex/`：本地數學排版資產及 MIT 授權。
 
 章節採 hash 路由，直接分享 `/#/discrete-control` 等連結時不需要伺服器重寫。新增教材時請保留來源版本與行號，並分清原碼事實、理論推導、待驗證事項。
 

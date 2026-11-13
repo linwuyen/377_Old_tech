@@ -1,6 +1,7 @@
 import { controlLessons } from './lessons/control.js';
 import { systemLessons } from './lessons/system.js';
 import { renderLab } from './lab.js';
+import { diagramInfo, diagramSVG } from './lessons/diagrams.js';
 
 const lessons = [...systemLessons, ...controlLessons].sort((a,b)=>Number(a.number)-Number(b.number));
 const sourceBase = 'https://github.com/linwuyen/ASR5K_Old/blob/5262007b56d420c74ac892692ea4d3969a3e3992/ASR5K_28377/TRACE_ASR5000_F28377S/';
@@ -42,7 +43,7 @@ function article(lesson){
   const i=lessons.indexOf(lesson),prev=lessons[i-1],next=lessons[i+1];
   main.innerHTML=`<div class="page article-page"><div class="article-layout"><article><header class="article-header"><div class="eyebrow">CHAPTER ${lesson.number} / ${escape(lesson.category)}</div><h1>${escape(lesson.title)}</h1><p>${escape(lesson.summary)}</p><div class="article-meta"><span>約 ${escape(lesson.duration)}</span><span>原碼版本 5262007</span><span>${completed.has(lesson.id)?'已閱讀 ✓':'原碼導讀'}</span></div></header><div class="article-body">${lesson.body}</div><div class="article-actions"><button class="btn complete-button ${completed.has(lesson.id)?'done':''}" id="complete-button" aria-pressed="${completed.has(lesson.id)}">${completed.has(lesson.id)?'✓ 已閱讀本章 · 取消標記':'標記本章已閱讀 ✓'}</button><div class="lesson-pagination">${prev?`<a href="#/${prev.id}"><small>← 上一章 / ${prev.number}</small><strong>${escape(shortTitles[prev.id])}</strong></a>`:'<a href="#/"><small>← 學習路徑</small><strong>回到學習總覽</strong></a>'}${next?`<a href="#/${next.id}"><small>下一章 / ${next.number} →</small><strong>${escape(shortTitles[next.id])}</strong></a>`:'<a href="#/lab"><small>延伸探索 →</small><strong>PI 互動實驗室</strong></a>'}</div></div></article><aside class="article-toc" aria-label="本章目錄"><span>ON THIS PAGE</span><div id="toc-links"></div><div class="toc-note">每個重要結論，都回到原始碼核對。<br><a href="#/sources">分析範圍與限制 ↗</a></div></aside></div></div>`;
   const headers=[...main.querySelectorAll('.article-body h2')];
-  headers.forEach((h,index)=>{h.id=`section-${index+1}`;});
+  headers.forEach((h,index)=>{if(!h.id)h.id=`section-${index+1}`;});
   document.querySelector('#toc-links').innerHTML=headers.map(h=>`<a href="#/${lesson.id}?section=${h.id}" data-section="${h.id}">${escape(h.textContent)}</a>`).join('');
   document.querySelector('#complete-button').addEventListener('click',e=>{if(completed.has(lesson.id))completed.delete(lesson.id);else completed.add(lesson.id);try{localStorage.setItem(storageKey,JSON.stringify([...completed]));}catch{}const done=completed.has(lesson.id);e.currentTarget.classList.toggle('done',done);e.currentTarget.setAttribute('aria-pressed',String(done));e.currentTarget.textContent=done?'✓ 已閱讀本章 · 取消標記':'標記本章已閱讀 ✓';main.querySelector('.article-meta span:last-child').textContent=done?'已閱讀 ✓':'原碼導讀';navigation(lesson.id);});
   main.querySelectorAll('pre').forEach(pre=>{const button=document.createElement('button');button.className='copy-code';button.textContent='複製';button.setAttribute('aria-label','複製程式碼');button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(pre.querySelector('code')?.textContent||pre.textContent);button.textContent='已複製 ✓';}catch{button.textContent='請選取複製';}setTimeout(()=>button.textContent='複製',1800);});pre.append(button);});
@@ -55,15 +56,16 @@ function sources(){
   const accessNote=document.createElement('div');accessNote.className='callout';accessNote.innerHTML='<strong>原碼存取權限</strong><p>來源儲存庫 ASR5K_Old 為私人專案。原碼連結需登入具有讀取權限的 GitHub 帳號；未獲授權的訪客可能看見 GitHub 404。公開教材本身可直接閱讀。</p>';main.querySelector('.article-header').after(accessNote);
 }
 let lastPage;
+const sectionTarget=section=>document.getElementById(section)||(/^section-\d+$/.test(section)?main.querySelectorAll('.article-body h2')[Number(section.slice(8))-1]:null);
 function route(){
   const raw=location.hash.replace(/^#\/?/,'');const [id='',query='']=raw.split('?');const section=new URLSearchParams(query).get('section');
-  if(id===lastPage&&section){document.getElementById(section)?.scrollIntoView({behavior:'smooth',block:'start'});return;}
+  if(id===lastPage&&section){sectionTarget(section)?.scrollIntoView({behavior:'smooth',block:'start'});return;}
   cleanupLab?.();cleanupLab=undefined;lastPage=id;
   closeNav();navigation(id);
   const lesson=lessons.find(l=>l.id===id);let title='學習總覽';
   if(!id)home();else if(lesson){article(lesson);title=shortTitles[id]||lesson.title;}else if(id==='lab'){title='PI 互動實驗室';main.innerHTML=`<div class="page lab-page"><header class="article-header"><div class="eyebrow">THE WORKBENCH / INTERACTIVE LAB</div><h1>讓控制邏輯，在眼前發生。</h1><p>不必接上硬體。透過一段合成誤差序列，觀察 PI 比例項、積分項與限幅之間的關係，再回到原碼核對每一拍。</p></header><div id="lab-root" class="article-body"></div><p><a class="btn secondary" href="#/discrete-control">← 閱讀離散 PI 解析</a></p></div>`;cleanupLab=renderLab(document.querySelector('#lab-root'));}else if(id==='sources'){title='原碼索引與版本';sources();}else{title='找不到章節';main.innerHTML='<div class="not-found"><h1>404</h1><p>這個章節不存在，請從學習總覽重新選擇。</p><a class="btn" href="#/">回到學習總覽 →</a></div>';}
   document.querySelector('#breadcrumb-current').textContent=title;document.title=`${title} · ASR5000 控制工程筆記`;
-  if(section)requestAnimationFrame(()=>document.getElementById(section)?.scrollIntoView());else window.scrollTo({top:0,behavior:'instant'});
+  if(section)requestAnimationFrame(()=>sectionTarget(section)?.scrollIntoView());else window.scrollTo({top:0,behavior:'instant'});
   main.focus({preventScroll:true});
 }
 const mobileQuery=window.matchMedia('(max-width:850px)');
@@ -79,4 +81,8 @@ function openSearch(){if(!dialog.open)dialog.showModal();search();document.query
 document.querySelector('#search-open').addEventListener('click',openSearch);document.querySelector('#search-close').addEventListener('click',()=>dialog.close());document.querySelector('#search-input').addEventListener('input',search);dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}if(e.key==='Escape')closeNav();});
 document.querySelector('.skip-link').addEventListener('click',e=>{e.preventDefault();main.focus({preventScroll:true});main.scrollIntoView();});
+const diagramDialog=document.querySelector('#diagram-dialog');
+main.addEventListener('click',e=>{const button=e.target.closest('.diagram-open');if(!button)return;const figure=button.closest('[data-diagram]');const name=figure.dataset.diagram;document.querySelector('#diagram-title').textContent=diagramInfo[name].title;document.querySelector('#diagram-detail').innerHTML=`<div class="diagram-scroll" tabindex="0" aria-label="放大方塊圖，可水平捲動">${diagramSVG(name,'expanded-'+name)}</div><p class="diagram-explanation">${escape(figure.querySelector('figcaption').textContent)}</p>`;diagramDialog.showModal();});
+document.querySelector('#diagram-close').addEventListener('click',()=>diagramDialog.close());
+diagramDialog.addEventListener('click',e=>{if(e.target===diagramDialog){const r=diagramDialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)diagramDialog.close();}});
 window.addEventListener('hashchange',route);route();

@@ -3,6 +3,8 @@ import { readFile, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { systemLessons } from '../lessons/system.js';
 import { controlLessons } from '../lessons/control.js';
+import { sourceExcerpts, equations } from '../lessons/shared.js';
+import { diagramInfo, diagramSVG } from '../lessons/diagrams.js';
 const root=new URL('../',import.meta.url);
 const lessons=[...systemLessons,...controlLessons];
 assert.equal(lessons.length,8,'Eight complete lessons are required');
@@ -26,8 +28,23 @@ for(const lesson of lessons){
     }
   }
 }
-for(const file of ['index.html','styles.css','app.js','lab.js','favicon.svg','.nojekyll'])await access(new URL(file,root));
+for(const file of ['index.html','styles.css','deep-content.css','app.js','lab.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
 const html=await readFile(new URL('index.html',root),'utf8');
 assert.ok(html.includes('lang="zh-Hant"'));
 for(const [,file] of html.matchAll(/(?:href|src)="\.\/([^"#]+)"/g))await access(new URL(file,root));
-console.log(`Verified ${lessons.length} lessons, ${citations} source citations, routes, metadata and local assets.${process.argv[2]?' All cited source files and line ranges exist.':''}`);
+for(const excerpt of sourceExcerpts){
+  const shown=excerpt.code.replace(/\r\n/g,'\n').split('\n');
+  assert.equal(shown.length,excerpt.end-excerpt.start+1,`${excerpt.path}:${excerpt.start} code line labels must match source range`);
+  if(process.argv[2]){
+    const original=(await readFile(resolve(process.argv[2],excerpt.path),'utf8')).split(/\r?\n/).slice(excerpt.start-1,excerpt.end);
+    assert.deepEqual(shown.map(line=>line.trim()),original.map(line=>line.trim()),`${excerpt.path}:${excerpt.start} displayed source must match original`);
+  }
+}
+for(const name of Object.keys(diagramInfo)){
+  const svg=diagramSVG(name,`check-${name}`);
+  assert.ok(!/undefined|NaN/.test(svg),`${name} diagram contains invalid coordinates`);
+  assert.ok(svg.includes('<title')&&svg.includes('<desc'),`${name} diagram needs text alternatives`);
+}
+const fontCSS=await readFile(new URL('vendor/katex/katex.min.css',root),'utf8');
+for(const [,path]of fontCSS.matchAll(/url\(([^)]+)\)/g))await access(new URL(`vendor/katex/${path.replace(/["']/g,'')}`,root));
+console.log(`Verified ${lessons.length} lessons, ${citations} citations, ${equations.length} strict-rendered formulas, ${Object.keys(diagramInfo).length} diagrams, ${sourceExcerpts.length} line-numbered excerpts and local fonts/assets.${process.argv[2]?' All source paths/ranges and displayed code match the original.':''}`);

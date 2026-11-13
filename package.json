@@ -4,5 +4,13 @@
   "private": true,
   "type": "module",
   "description": "Source-grounded Traditional Chinese control engineering tutorials for ASR5000 F28377S",
-  "scripts": { "test": "node --test lab.test.js", "check": "node scripts/check.mjs", "dev": "node scripts/serve.mjs" }
+  "scripts": {
+    "test": "node --test lab.test.js",
+    "check": "node scripts/check.mjs",
+    "dev": "node scripts/serve.mjs",
+    "vendor:math": "node scripts/vendor-math.mjs"
+  },
+  "devDependencies": {
+    "katex": "0.19.1"
+  }
 }
