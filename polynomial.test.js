@@ -33,6 +33,28 @@ test('real root isolation resolves separate narrow crossing intervals', () => {
   for (const [index, expected] of [0.00000002, 0.2, 0.20001, 1.3].entries()) assert.ok(Math.abs(roots[index] - expected) < 1e-8);
 });
 
+test('real root isolation reports a repeated root once despite Horner roundoff', () => {
+  for (const [coefficients, expected] of [
+    [[1, -1.8, 0.81], 0.9], // (x - 0.9)^2, decimal coefficients round in binary.
+    [[1, -1, 0.25], 0.5], // Exactly representable repeated root.
+  ]) {
+    const roots = realRootsInInterval(coefficients, 0, 2);
+    assert.equal(roots.length, 1);
+    assert.ok(Math.abs(roots[0] - expected) < 1e-12);
+  }
+});
+
+test('real root isolation preserves resolvable nearby roots at different scales', () => {
+  for (const [coefficients, interval, expected, tolerance] of [
+    [[1, -0.400001, 0.0400002], [0, 2], [0.2, 0.200001], 1e-9],
+    [[1, -3e-15, 2e-30], [0, 1e-14], [1e-15, 2e-15], 1e-28],
+  ]) {
+    const roots = realRootsInInterval(coefficients, ...interval);
+    assert.equal(roots.length, 2);
+    roots.forEach((root, i) => assert.ok(Math.abs(root - expected[i]) < tolerance));
+  }
+});
+
 test('invalid polynomial coefficients fail rather than produce fabricated poles', () => {
   for (const input of [[], [0, 1], [1, NaN], [1, Infinity]]) assert.throws(() => solvePolynomialRoots(input), RangeError);
 });

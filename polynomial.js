@@ -97,7 +97,11 @@ export function solvePolynomialRoots(input) {
   return { roots: roots.map(z => ({ ...z, radius: abs(z) })), converged, ...check, iterations };
 }
 
-/** Isolate all real roots in an interval using derivative monotonic partitions. */
+/**
+ * Isolate distinct real roots using derivative monotonic partitions. Repeated
+ * roots are recognized to coefficient/Horner roundoff; root separations below
+ * that numerical resolution cannot be distinguished from a repeated root.
+ */
 export function realRootsInInterval(input, left, right) {
   let coefficients = [...input];
   while (coefficients.length > 1 && coefficients[0] === 0) coefficients.shift();
@@ -109,12 +113,20 @@ export function realRootsInInterval(input, left, right) {
   const derivative = coefficients.slice(0, -1).map((c, i) => c * (degree - i));
   const critical = realRootsInInterval(derivative, left, right);
   const partitions = [left, ...critical.filter(x => x > left && x < right), right];
+  const isRoundoffZero = (value, x) => {
+    const magnitudeBound = coefficients.reduce((sum, c) => sum * Math.abs(x) + Math.abs(c), 0);
+    return Math.abs(value) <= (2 * degree + 1) * Number.EPSILON * magnitudeBound;
+  };
   const roots = [];
   for (let i = 0; i < partitions.length - 1; i++) {
     let lo = partitions[i], hi = partitions[i + 1];
     let flo = evaluatePolynomial(coefficients, lo), fhi = evaluatePolynomial(coefficients, hi);
-    if (flo === 0) roots.push(lo);
-    if (fhi === 0) roots.push(hi);
+    const leftRoot = isRoundoffZero(flo, lo), rightRoot = isRoundoffZero(fhi, hi);
+    if (leftRoot) roots.push(lo);
+    if (rightRoot) roots.push(hi);
+    // A monotone partition with a root at its endpoint has no interior root.
+    // Bisecting against a rounded zero would manufacture extra nearby roots.
+    if (leftRoot || rightRoot) continue;
     if (Math.sign(flo) === Math.sign(fhi)) continue;
     for (let n = 0; n < 80; n++) {
       const mid = (lo + hi) / 2, fm = evaluatePolynomial(coefficients, mid);
@@ -123,5 +135,7 @@ export function realRootsInInterval(input, left, right) {
     }
     roots.push((lo + hi) / 2);
   }
-  return roots.sort((a, b) => a - b).filter((x, i, all) => !i || Math.abs(x - all[i - 1]) > 1e-12);
+  // Shared partition endpoints are identical values; an absolute distance
+  // threshold would incorrectly merge distinct small-magnitude roots.
+  return roots.sort((a, b) => a - b).filter((x, i, all) => !i || x !== all[i - 1]);
 }

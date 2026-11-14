@@ -1,6 +1,6 @@
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const diagramInfo={
-  feedback:{title:'多速率回授迴路',description:'CPU 產生波形基值，CLA 限幅及 SPI DAC 輸出；ADC 校正及量測統計交給前景選擇 CV、CC 或 CP，補償再回到輸出路徑。外部硬體方塊僅示意邊界，未辨識其傳遞函數。'},
+  feedback:{title:'多速率回授迴路',description:'CPU 產生波形基值，CLA 限幅及 SPI DAC 輸出；ADC 校正及量測統計交給前景選擇 CV、CC 或 CP 更新，已保存的偏移仍可能一起回到輸出路徑。外部硬體方塊僅示意邊界，未辨識其傳遞函數。'},
   measurement:{title:'電流重建的三條支路',description:'分段校正取得 V_FB 與 I_shunt，再減去電阻與電容模型電流。電容支路包含一次差分與 Cs_mpy_360000 係數。'},
   pi:{title:'PI 與上一拍飽和閘門',description:'誤差經 Kp 分流為比例與 Ki 積分支路，相加並限幅。上一拍的限幅前後輸出是否相等，決定本拍積分是否更新。'},
   filter:{title:'一階 IIR 的延遲狀態',description:'本拍及前拍輸入相加後乘 C1，再加上前拍輸出乘 D1，得到新輸出。兩個 z 負一次方分別代表一拍輸入與輸出記憶。'},
@@ -21,10 +21,10 @@ export function diagramSVG(name,uid=`svg-${name}`){
     shape=text(20,32,'CPU 參考值與快速輸出路徑',{anchor:'start',size:14,fill:muted})+
       box(20,70,160,82,'使用者設定','目標 / 模式 / 頻率')+box(210,70,160,82,'DDS / 狀態機','WAVE、VREF 基值')+box(400,70,160,82,'疊加補償','WAVE / VREF 偏移')+box(590,70,160,82,'CLA → SPI DAC','加總、限幅、合成')+box(790,70,150,82,'外部功率級','硬體模型未辨識','external')+
       line([[180,111],[210,111]])+line([[370,111],[400,111]])+line([[560,111],[590,111]])+line([[750,111],[790,111]])+
-      box(790,275,150,82,'ADS8353','外部取樣','external')+box(545,275,180,82,'CLA 校正 / 重建','V_FB、I_FB')+box(285,275,195,82,'量測窗口 / 統計','平均、RMS、有功功率')+box(20,275,200,82,'選擇 CV / CC / CP','前景補償；非同時相加')+
+      box(790,275,150,82,'ADS8353','外部取樣','external')+box(545,275,180,82,'CLA 校正 / 重建','V_FB、I_FB')+box(285,275,195,82,'量測窗口 / 統計','平均、RMS、有功功率')+box(20,275,200,82,'選擇 CV / CC / CP','每回合選一模式更新')+
       line([[865,152],[865,275]],{label:'輸出與感測',lx:795,ly:218})+line([[790,316],[725,316]])+line([[545,316],[480,316]])+line([[285,316],[220,316]],{label:'回授',lx:252,ly:301})+
       line([[100,152],[100,275]],{color:orange,dash:true,label:'參考 r',lx:135,ly:218})+
-      line([[120,357],[120,416],[500,416],[500,152]],{color:orange,label:'補償偏移：由實際模式決定 WAVE 或 VREF 的去向',lx:340,ly:453})+
+      line([[120,357],[120,416],[500,416],[500,152]],{color:orange,label:'保存的偏移仍參與 WAVE / VREF 加總',lx:340,ly:453})+
       text(545,248,'較慢的量測與前景補償路徑',{anchor:'start',size:14,fill:muted});
   }else if(name==='pi'){
     h=505;

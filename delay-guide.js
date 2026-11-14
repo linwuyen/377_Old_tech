@@ -93,6 +93,13 @@ export function renderDelayGuide() {
       <li><strong>只降低量測截止頻率：</strong>比較「平順追蹤」與「量測低通 1 Hz」，再固定 D 與控制器、逐步降低 fLP。同時查看原始 y 與量測 m；m 較慢不代表 y 的超調一定較小。低通同時移動交越與增加相位落後，PM 的變化要重新計算，不能只從「截止更低」推定。</li>
       <li><strong>改 Ts 時先寫下保持什麼：</strong>固定 D 拍會改變延遲秒數，固定 Ki 會改變每秒積分強度，固定 fLP 的 Hz 值則會重算低通係數。如果要保持 Ti，需同步調整 Ki；如果要保持延遲秒數，需調整 D，而整數拍可能無法精確吻合。一次只改一項約定，再比較圖形。</li>
     </ol>
+    <h3>補充｜追蹤、抗負載與抗量測雜訊，是不同的傳遞路徑</h3>
+    <p>以下是未飽和、固定參數、零初始狀態的延伸推導，<strong>目前介面沒有注入雜訊，也沒有繪製抗擾動曲線</strong>。令量測雜訊 ν 加在低通之前，即 m=F(y+ν)；負載 d 仍在延遲致動之後、被控體之前以負號進入。沿第 11 節方塊圖，可寫出：</p>
+    ${math(String.raw`y=A\big[r-F(y+\nu)\big]-G_p d,\qquad S=\frac{1}{1+L},\quad T=\frac{L}{1+L},\quad S+T=1`)}
+    ${math(String.raw`\begin{aligned}\frac{y}{r}&=AS=H_y, &\frac{y}{d}&=-G_pS,\\\frac{y}{\nu}&=-T=-H_m, &\frac{u}{\nu}&=-G_cFS.\end{aligned}`)}
+    <p>各比值皆令其他外部輸入為零；u 指延遲前的命令。S 與 T 分別是靈敏度與互補靈敏度，定義可對照 <a href="https://www.mathworks.com/help/robust/ug/worst-case-sensitivity-functions-of-feedback-loops.html" target="_blank" rel="noopener noreferrer">MathWorks 的負回授靈敏度說明 ↗</a>；上述負載位置與符號則依本實驗方塊圖推導。追蹤頻寬描述 y/r，不能直接當成抗負載頻寬；低通降低高頻量測成分，卻也會透過 L 改變 S、T 及共振。量測 m 看起來平滑，不足以證明實體 y 或致動命令 u 的雜訊都變小。</p>
+    <p>若雜訊是在濾波器之後才加入，改成 m=Fy+ν，則 y/ν=−AS=−Hy，不再是 −Hm。分析量化、感測或通訊雜訊前，先標明它加在哪一個節點。</p>
+    <p><strong>數位低通不能修復 ADC 取樣時已經產生的混疊。</strong> 本頁 fc≤0.45/Ts 是教學參數範圍，不是類比抗混疊設計的保證。ADC 前端需先限制帶外成分；若後續要降採樣，也要在降採樣前適當限頻。可參照 <a href="https://users.ece.utexas.edu/~valvano/EE445L/ebook/Chapter2_DigitalSampling.htm" target="_blank" rel="noopener noreferrer">UT Austin 數位取樣教材的抗混疊說明 ↗</a>。</p>
     <p>新增的 D 與 fLP 是可檢驗的教學假設，尚未由 ASR5000 的資料路徑實測辨識。頻域圖描述未飽和線性動態；過載、積分凍結與恢復仍需回到時域逐拍狀態判讀。</p>
   </section>`;
 }

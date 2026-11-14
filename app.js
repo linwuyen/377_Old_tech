@@ -1,6 +1,7 @@
 import { controlLessons } from './lessons/control.js';
 import { systemLessons } from './lessons/system.js';
 import { renderLab } from './lab.js';
+import { labGuideParts } from './lab-content.js';
 import { diagramInfo, diagramSVG } from './lessons/diagrams.js';
 
 const lessons = [...systemLessons, ...controlLessons].sort((a,b)=>Number(a.number)-Number(b.number));
@@ -75,8 +76,8 @@ document.querySelector('#menu-toggle').addEventListener('click',()=>{const sideb
 mobileQuery.addEventListener('change',syncNav);syncNav();
 document.querySelector('#nav-overlay').addEventListener('click',closeNav);
 document.querySelector('#nav-close').addEventListener('click',closeNav);
-const searchable=lessons.map(l=>{const el=document.createElement('div');el.innerHTML=l.body;return {...l,searchText:`${l.title} ${shortTitles[l.id]} ${l.summary} ${l.tags?.join(' ')} ${el.textContent}`.toLocaleLowerCase()};});
-function search(){const q=document.querySelector('#search-input').value.trim().toLocaleLowerCase();const results=searchable.filter(l=>!q||q.split(/\s+/).every(word=>l.searchText.includes(word)));document.querySelector('#search-results').innerHTML=results.length?results.map(l=>`<a class="search-result" href="#/${l.id}"><small>${l.number}</small><strong>${escape(l.title)}</strong><p>${escape(l.summary)}</p></a>`).join(''):'<p class="search-empty">找不到符合的章節。可試試 PI、取樣、CLA 或 DDS。</p>';document.querySelectorAll('.search-result').forEach(a=>a.addEventListener('click',()=>dialog.close()));}
+const searchable=[...lessons,...labGuideParts.map(part=>({id:'lab',...part,body:part.html}))].map(l=>{const el=document.createElement('div');el.innerHTML=l.body;return {...l,section:l.id==='lab'?el.querySelector('h2').id:null,searchText:`${l.title} ${shortTitles[l.id]||''} ${l.summary} ${l.tags?.join(' ')||''} ${el.textContent}`.toLocaleLowerCase()};});
+function search(){const q=document.querySelector('#search-input').value.trim().toLocaleLowerCase();const results=searchable.filter(l=>!q||q.split(/\s+/).every(word=>l.searchText.includes(word)));document.querySelector('#search-results').innerHTML=results.length?results.map(l=>`<a class="search-result" href="#/${l.id}${l.section?'?section='+encodeURIComponent(l.section):''}"><small>${l.number}</small><strong>${escape(l.title)}</strong><p>${escape(l.summary)}</p></a>`).join(''):'<p class="search-empty">找不到符合的章節或實驗室導讀。可試試 PI、相位裕度、低通或 DDS。</p>';document.querySelectorAll('.search-result').forEach(a=>a.addEventListener('click',()=>dialog.close()));}
 function openSearch(){if(!dialog.open)dialog.showModal();search();document.querySelector('#search-input').focus();}
 document.querySelector('#search-open').addEventListener('click',openSearch);document.querySelector('#search-close').addEventListener('click',()=>dialog.close());document.querySelector('#search-input').addEventListener('input',search);dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}if(e.key==='Escape')closeNav();});

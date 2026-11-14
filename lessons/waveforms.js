@@ -81,9 +81,10 @@ export const waveformLesson = {
     <p>理想對稱波形的峰對峰值為 2A，所以由 Vpp 求 A 應乘 0.5。產品實作卻要逐分支讀：RMS 選項複製各波形的 CF；Peak-to-Peak 選項只將 ARB 與三角的換算欄位設為 0.5，正弦與方波維持其 CF。欄位名稱仍叫 CF，但此時部分元素扮演「單位到峰值的換算係數」；不能把介面所有波形都概括成相同 Vpp 語義。${src('Source/Event_Module.c', 3587, 3625)}</p>
 
     <h2 id="dds-affine">07｜波表碼值先經過 affine 縮放</h2>
-    <p>在所示設定事件中，程式先以設定值乘波形 CF 得到峰值尺度，再除以最大量程與設定單位倍率，產生負號的 <code>WAVE_scale_shadow</code>；DC 設定則進入 <code>WAVE_offset_shadow</code>。這裡的負號是來源中的碼值方向，不宜未看類比級就把它改成「輸出電壓反相」的硬體結論。<code>AD5543_HALF_VALUE</code> 在本版是 32767.0。${src('Source/Event_Module.c', 1361, 1388)} ${src('Include/Global_VariableDefs.h', 255, 255)}</p>
-    ${math(String.raw`g=-\frac{\mathrm{ACV}_{\mathrm{set}}\,\mathrm{CF}}{V_{\max}\,10000},\qquad o=\operatorname{int32}\!\left[32767\left(1-\frac{\mathrm{DCV}_{\mathrm{set}}}{V_{\max}\,10000}\right)\right]`)}
-    <p>上式整理的是所引設定分支；其他模式還可能套用頻率補償等流程。當 shadow 參數由狀態機載入後，ON 狀態才使用波形碼值 w 做 affine 運算：</p>
+    <p><strong>先看一個明確限定的參數來源：</strong><code>ADD_Mode_Change_ACV_DCV_GAIN_Event()</code> 使用 Vmax=1.01×DC_Maximum_Vout；AC 旗標為零時把峰值設為零，否則以 AC 設定值乘波形 CF。DC 旗標為零時也先將有效 DC 設定歸零。令 Aeff、Deff 分別表示依這兩個旗標選定的有效設定值，則這個 ADD 事件的縮放與偏移如下。此處不是 INT 模式所有設定路徑的通用公式。${src('Source/Event_Module.c', 1314, 1348)} ${src('Source/Event_Module.c', 1361, 1388)}</p>
+    ${math(String.raw`g=-\frac{A_{\mathrm{eff}}\,\mathrm{CF}}{V_{\max}\,10000},\qquad o=\operatorname{int32}\!\left[32767\left(1-\frac{D_{\mathrm{eff}}}{V_{\max}\,10000}\right)\right]`)}
+    <p>這裡的負號是來源中的碼值方向，不宜未看類比級就解讀為負載端電壓反相。<code>AD5543_HALF_VALUE</code> 在本版是 32767.0；AC 關閉時 g=0，DC 關閉時 o=32767，即使使用者設定欄位還保存非零值也一樣。${src('Include/Global_VariableDefs.h', 255, 255)}</p>
+    <p>再回到本課 INT 輸出路徑：無論參數如何產生，都必須另追其載入時機；ON 狀態讀取目前已生效的 scale、offset，以下只描述這一步的 affine 運算，不將前述 ADD 設定式當作它的完整來源：</p>
     ${codeBlock('Source/CPU_Timer_Module.c', 1236, 1238, String.raw`            scale  = sGB.OUTPUT_VARIABLES.WAVE_scale;
             offset = (float) sGB.OUTPUT_VARIABLES.WAVE_offset;
             sGB.OUTPUT_VARIABLES.WAVE_goal = (int32) (wave_value * scale + offset);`, '碼值先縮放、平移，再轉成 int32 目標')}

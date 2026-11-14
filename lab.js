@@ -1,8 +1,6 @@
 import { DEFAULTS, PRESETS, simulateClosedLoop } from './simulation.js';
-import { renderLabGuide } from './lab-guide.js';
+import { labGuideParts } from './lab-content.js';
 import { renderFrequencyPanel } from './frequency-view.js';
-import { renderFrequencyGuide } from './frequency-guide.js';
-import { renderDelayGuide } from './delay-guide.js';
 
 /**
  * A numerical lesson, not a plant or hardware simulation.
@@ -58,7 +56,7 @@ export function renderLab(container) {
   ];
   const controlsHTML = specs.map(([key, label, min, max, step, hint]) => `${key === 'delaySamples' ? '<div class="cl-dynamics-title">延遲與量測路徑</div>' : ''}${key === 'cutoffHz' ? `<label class="cl-checkbox cl-filter-toggle"><input type="checkbox" data-filter-enabled>啟用量測低通 F(z)</label>` : ''}<div class="cl-control" data-parameter-group="${key}">
     <label for="${id}-${key}">${label}</label>
-    <input type="number" id="${id}-${key}-value" data-number="${key}" aria-label="${label}數值" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
+    <input type="number" id="${id}-${key}-value" data-number="${key}" aria-label="${label}數值" aria-describedby="${id}-${key}-hint ${id}-parameter-error" aria-invalid="false" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
     <input type="range" id="${id}-${key}" data-param="${key}" aria-describedby="${id}-${key}-hint" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
     <small id="${id}-${key}-hint">${hint}</small></div>`).join('');
   container.innerHTML = `<div class="closed-loop-lab">
@@ -72,7 +70,7 @@ export function renderLab(container) {
         <p class="cl-dynamics-note" data-dynamics-note></p>
         <p class="cl-clamp-note" data-cutoff-adjustment role="status" hidden></p>
         <button type="button" class="cl-controls-jump" data-bypass-dynamics>旁路延遲與低通（保留增益）</button>
-        <p class="cl-parameter-error" data-parameter-error role="status" hidden>請輸入範圍內且符合步進的數值；圖表保留上次有效結果。</p>
+        <p class="cl-parameter-error" id="${id}-parameter-error" data-parameter-error role="status" hidden></p>
         <p class="cl-equivalent" data-equivalent></p>
         <label class="cl-checkbox"><input type="checkbox" data-compare checked>疊加另一種積分方式的對照曲線</label>
         <button type="button" class="btn secondary cl-reset" data-reset>還原預設參數</button>
@@ -92,9 +90,9 @@ export function renderLab(container) {
       </section>
     </div>
     <p class="cl-model-note">假設：τ = 0.25 s、直流增益 = 1、初始狀態 = 0；目標 0 → 0.6。所有振幅皆無量綱。被控體為教學假設，未由 ASR5000 功率級辨識；控制器依原碼順序、以 JavaScript 雙精度計算。原碼連結需登入具有來源儲存庫讀取權限的 GitHub 帳號。</p>
-    <div class="cl-guide" data-lab-guide>${renderLabGuide()}</div>
-    <div class="cl-guide" data-frequency-guide>${renderFrequencyGuide()}</div>
-    <div class="cl-guide" data-delay-guide>${renderDelayGuide()}</div>
+    <div class="cl-guide" data-lab-guide>${labGuideParts[0].html}</div>
+    <div class="cl-guide" data-frequency-guide>${labGuideParts[1].html}</div>
+    <div class="cl-guide" data-delay-guide>${labGuideParts[2].html}</div>
   </div>`;
 
   const find = selector => container.querySelector(selector);
@@ -161,6 +159,46 @@ export function renderLab(container) {
     if (!adjustment.hidden) adjustment.textContent = `Ts 改變後，fc 已調整至 ${number(maxCutoff, 1)} Hz，以保持 fc ≤ 0.45 / Ts。`;
   }
 
+  const validNumber = element => element.value !== '' && element.validity.valid;
+  function validateDraft() {
+    const invalid = specs.filter(([key]) => {
+      const failed = !numbers[key].disabled && !validNumber(numbers[key]);
+      numbers[key].setAttribute('aria-invalid', String(failed));
+      return failed;
+    });
+    const notice = find('[data-parameter-error]');
+    notice.hidden = invalid.length === 0;
+    notice.textContent = invalid.length ? `${invalid.map(([, label]) => label).join('、')}：請輸入範圍內且符合步進的數值。圖表與讀值仍使用上次整組有效參數；修正後才會一併套用目前所有設定。` : '';
+    return invalid.length === 0;
+  }
+
+  // Keep form edits separate from the committed model until the whole draft is
+  // valid. The cutoff's admissible range follows the draft sampling period.
+  function syncDraftDynamics(key) {
+    const cutoffWasValid = validNumber(numbers.cutoffHz);
+    let clamped = false;
+    if (validNumber(numbers.ts)) {
+      const maxCutoff = Math.floor((0.45 / +numbers.ts.value + 1e-10) * 10) / 10;
+      ranges.cutoffHz.max = numbers.cutoffHz.max = maxCutoff;
+      if (key === 'ts' && cutoffWasValid && +numbers.cutoffHz.value > maxCutoff) {
+        ranges.cutoffHz.value = numbers.cutoffHz.value = maxCutoff;
+        clamped = true;
+      }
+    }
+    const enabled = find('[data-filter-enabled]').checked;
+    const cutoffIsValid = validNumber(numbers.cutoffHz);
+    ranges.cutoffHz.disabled = numbers.cutoffHz.disabled = !enabled;
+    find('[data-parameter-group="cutoffHz"]').classList.toggle('cl-disabled-control', !enabled);
+    // A disabled filter has no pending invalid parameter. Restore its last
+    // committed cutoff, bounded by the current valid draft sampling period.
+    if (!enabled && !cutoffIsValid) {
+      ranges.cutoffHz.value = numbers.cutoffHz.value = Math.min(options.cutoffHz, +numbers.cutoffHz.max);
+    }
+    const adjustment = find('[data-cutoff-adjustment]');
+    adjustment.hidden = !clamped;
+    if (clamped) adjustment.textContent = `Ts 改變後，fc 已調整至 ${number(+numbers.cutoffHz.max, 1)} Hz，以保持 fc ≤ 0.45 / Ts。`;
+  }
+
   function calculate() {
     result = simulateClosedLoop(options);
     comparison = simulateClosedLoop({ ...options, mode: options.mode === 'firmware' ? 'unconditional' : 'firmware' });
@@ -177,7 +215,8 @@ export function renderLab(container) {
     // Compare displayed physical margins tolerantly; keep runPI's exact gate unchanged.
     const hasMargin = required < options.limit - 1e-10;
     const overloaded = required > options.limit + 1e-10;
-    find('[data-feasibility]').innerHTML = `加載後維持 y = 0.6 需要 u = 0.6 + d = <b>${number(required, 2)}</b>。${overloaded ? '<strong>超出 Umax：此階段目標不可達，觀察卸載後恢復。</strong>' : !hasMargin ? '剛好等於 Umax，沒有向上的控制裕度。' : '低於 Umax，具有靜態控制裕度；動態仍取決於參數。'}`;
+    const stepFeasibility = options.limit < 0.6 - 1e-10 ? '<strong>Umax 小於階躍目標 0.6：即使尚未加載，目標也不可達；卸載後仍受相同限制。</strong> ' : Math.abs(options.limit - 0.6) <= 1e-10 ? '未加載時維持 y = 0.6 已需要 u = Umax，沒有向上的靜態控制裕度。 ' : '';
+    find('[data-feasibility]').innerHTML = `${stepFeasibility}加載後維持 y = 0.6 需要 u = 0.6 + d = <b>${number(required, 2)}</b>。${overloaded ? '<strong>超出 Umax：此階段目標不可達，觀察卸載後恢復。</strong>' : !hasMargin ? '剛好等於 Umax，沒有向上的控制裕度。' : '低於 Umax，具有靜態控制裕度；動態仍取決於參數。'}`;
     find('[data-extra-metrics]').innerHTML = `<dl class="cl-more-values"><div><dt>10–90% 上升時間</dt><dd>${duration(m.riseTime)}</dd></div><div><dt>加載前峰值</dt><dd>${number(m.peak)}</dd></div><div><dt>卸載後首次解除限幅</dt><dd>${duration(m.saturationExit)}</dd></div><div><dt>末點誤差 Ref − y</dt><dd>${number(m.finalError)}</dd></div></dl><p>所有超調／整定／末點誤差均以實體 y 判定。階躍指標使用 [${number(events.step)}, ${number(events.loadOn)}) s；卸載回復使用 [${number(events.loadOff)}, ${number(events.end)}] s。整定判定為進入目標 ±0.012 後，到該觀察窗末端均未離開，且帶內尾段至少 0.25 s；太晚入帶時顯示「觀察時間不足」。「不適用」表示負載為零，或解除限幅指標在卸載前一拍未限幅；「觀察窗內未達成」不推論更長時間的結果。解除限幅與回授收斂是兩個不同事件。</p><p>對照模式：${options.mode === 'firmware' ? '無條件積分' : '原碼凍結'}，超調 ${number(comparison.metrics.overshootPercent, 1)}%，卸載回復 ${duration(comparison.metrics.recoveryTime)}。事件對齊至名義時間之後的第一個控制取樣；本次共 ${result.points.length} 個觀察點。</p>`;
     find('[data-compare-legend]').textContent = options.mode === 'firmware' ? '對照：無條件積分' : '對照：原碼凍結';
     find('[data-compare-legend]').hidden = !find('[data-compare]').checked;
@@ -190,7 +229,7 @@ export function renderLab(container) {
     for (const [key] of specs) ranges[key].value = numbers[key].value = options[key];
     syncDynamicsControls();
     find('[data-mode]').value = options.mode;
-    find('[data-parameter-error]').hidden = true;
+    validateDraft();
     container.querySelectorAll('[data-preset]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.preset === presetId)));
     find('[data-preset-note]').textContent = PRESETS.find(p => p.id === presetId)?.description || '每次調整即從零初始狀態重算完整實驗。';
     calculate();
@@ -201,15 +240,17 @@ export function renderLab(container) {
     if (target.matches('[data-compare]')) { find('[data-compare-legend]').hidden = !target.checked; drawChart(); return; }
     const key = target.dataset.param || target.dataset.number;
     if (key) {
-      if (!target.validity.valid || target.value === '') { find('[data-parameter-error]').hidden = false; return; }
-      options[key] = +target.value;
-      ranges[key].value = numbers[key].value = target.value;
-    } else if (target.matches('[data-mode]')) options.mode = target.value;
-    else if (target.matches('[data-filter-enabled]')) options.filterEnabled = target.checked;
+      if (validNumber(target)) ranges[key].value = numbers[key].value = target.value;
+    } else if (target.matches('[data-mode]') || target.matches('[data-filter-enabled]')) { /* draft control */ }
     else return;
-    syncDynamicsControls(key === 'ts');
-    find('[data-parameter-error]').hidden = Object.values(numbers).every(el => el.validity.valid && el.value !== '');
     container.querySelectorAll('[data-preset]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    syncDraftDynamics(key);
+    if (!validateDraft()) {
+      find('[data-preset-note]').textContent = '參數尚未套用 · 圖表保留上次整組有效設定，待修正後重新計算。';
+      return;
+    }
+    options = { ...options, ...Object.fromEntries(specs.map(([name]) => [name, +numbers[name].value])), mode: find('[data-mode]').value, filterEnabled: find('[data-filter-enabled]').checked };
+    for (const [name] of specs) ranges[name].value = numbers[name].value;
     find('[data-preset-note]').textContent = '自訂參數 · 每次調整均從零初始狀態重新計算。';
     calculate();
   }

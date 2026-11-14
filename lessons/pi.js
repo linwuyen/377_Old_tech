@@ -102,6 +102,8 @@ void CP_Control_Loop_Calc(void)
 
     <h2 id="pi-cadence">07｜T 要從呼叫路徑取得，不能直接填 Timer 週期</h2>
     <p>主迴圈先用經過的 Timer 計數判斷是否超過 Meas_Period，更新時間戳後依序計算量測與補償。它不是在每個 Timer 中斷直接執行這些 PI；補償內部還要經過模式與狀態選擇。${src('Source/main.c', 325, 342)} ${src('Source/Output_Control_Module.c', 310, 348)}</p>
+    <p><strong>到達補償函式仍不等於呼叫 PI。</strong>先要處於 OUTPUT_STATE；CV 分支還要求 <code>CV_Compensation_Enable</code> 與 shadow 旗標都為 1，再依輸出模式與波形選擇子迴路。CV 的 EXT、ADD、SEQ 分支本身不執行這些電壓 PI；AC 的指定分支只接受正弦或三角。CC／CP 也有初始化與退出分支，所以應對「某一個 PI 物件」記錄呼叫，不能只統計 Compensate_Calc_Process 的入口次數。${src('Source/Output_Control_Module.c', 69, 159)} ${src('Source/Output_Control_Module.c', 464, 518)} ${src('Source/Output_Control_Module.c', 614, 624)} ${src('Source/Output_Control_Module.c', 313, 348)}</p>
+    <p>單機 DC／ACDC 初始化後還會進入延遲狀態。<code>COMPENSATE_DELAY_TIME=18018</code> 是 Timer0 計數，在名目 120 kHz 下門檻約為 150.15 ms；通過嚴格大於比較的那回合只切到 PID 狀態，下一次補償呼叫才進入 PI。這與穩態的 Meas_Period 是不同的等待來源，也不能將這段停用時間直接算成一次大積分。多機分支須另外追蹤，不能套用同一啟動時間。${src('Include/Output_Control_Module.h', 16, 16)} ${src('Source/Output_Control_Module.c', 696, 740)} ${src('Source/Output_Control_Module.c', 933, 980)}</p>
     <p>Timer0 定義為 120000 Hz。一般頻率分支用 CPU_TIMER0_FREQ/freqset 設定門檻；freqset≥200 時卻用固定 1802，freqset&lt;1 時用 6006。按目前定義，兩者分別約 15.017 ms 與 50.05 ms，不是舊註解所寫的 5 ms 與 16.667 ms。這些是門檻換算；比較條件是「&gt;」，且主迴圈需輪轉回來，實際間隔還包括量化與排程延遲。${src('Include/CPU_Timer_Module.h', 21, 27)} ${src('Source/main.c', 552, 576)}</p>
     <p>若 Ki 固定，常值誤差下每秒累積量約為 KpKi e/Tactual。上節的 Kp=2、Ki=0.025，原設計每 10 ms 呼叫一次時，積分斜率為 5e/s；改成每 30 ms 一次卻不改係數，約剩 1.667e/s。要維持同一 Ti，週期變三倍應將 Ki 乘三，而非除三。</p>
     ${math(String.raw`\left.\frac{\Delta I}{\Delta t}\right|_{\text{fixed error}}\approx\frac{K_pK_i}{T_{\rm actual}}e,\qquad K_{i,\rm new}=K_{i,\rm old}\frac{T_{\rm new}}{T_{\rm old}}`)}

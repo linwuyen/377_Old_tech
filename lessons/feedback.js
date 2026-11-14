@@ -7,7 +7,7 @@ export const feedbackLesson = {
   body: `
     <h2 id="loop-map">01｜先把真正閉合的路徑畫出來</h2>
     <p>本章沿「輸出命令 → 實際電壓電流 → 量測 → 補償 → 輸出命令」閱讀。<strong>原碼事實：</strong>DDS 與波表產生基礎波形，CPU 將 WAVE 補償加入目標並執行 slew rate，CLA 合成 DAC 字；ADC 回來後才形成量測統計，主迴圈選擇 CV、CC 或 CP 更新補償。這是疊加於基礎命令的回授路徑。功率級、感測電路與類比內環未由這幾個檔案完整描述，圖中的硬體區塊因此保留為未知模型。${src('Source/CPU_Timer_Module.c', 1230, 1238)} ${src('Source/CPU_Timer_Module.c', 265, 271)} ${src('Source/CLA_Task.cla', 105, 135)}</p>
-    ${diagram('feedback', '三種時間尺度：DDS／DAC 命令、CLA 量測與主迴圈補償。CV、CC、CP 由狀態機互斥選擇；基礎波形持續存在。')}
+    ${diagram('feedback', '三種時間尺度：DDS／DAC 命令、CLA 量測與主迴圈補償。CV、CC、CP 每回合只選一種模式更新；先前保存的補償偏移仍可能一起作用。')}
     <p>由 <code>main.c</code> 開始：時間條件成立才更新時間戳，接著 L339 呼叫 <code>Measurement_Calc_Process()</code>，L342 呼叫 <code>Compensate_Calc_Process()</code>。因此一個 PI 呼叫並不等於一個 ADC 樣本，也沒有理由把這條補償稱為每個 PWM 週期執行的電流內環。</p>
     ${codeBlock('Source/main.c', 332, 334, String.raw`                if ( Calc_Elapsed_Time( sTimer.Cpu_Timer0_Time_Stamp_04, CpuTimer0.InterruptCount ) > (Uint32)Meas_Module.Meas_Period )
                 {
@@ -30,7 +30,8 @@ export const feedbackLesson = {
 
         float_buf1 = CLA_to_CPU_Variables.V_FB_shadow - CLA_to_CPU_Variables.V_FB; //for I_Cs
         CLA_to_CPU_Variables.V_FB = CLA_to_CPU_Variables.V_FB_shadow;`, '先校正，再保存電壓差')}
-    <p><strong>手算例，數值為教學假設：</strong>令 offset=−10 count、正段斜率 0.100 V/count、負段 0.101 V/count。ADC=1010 得到 100 V；ADC=−990 得到 −101 V。ADC=5 雖為正，校正後 −5，必須走負段。兩段都在修正零點得到零，但斜率可不同。L188 必須先算新舊差，L189 才覆寫歷史，交換順序會讓電容補償恆為零。</p>
+    <p><strong>先分清原始碼與中心化數值。</strong><code>sC28CLA.ADS8353_CHA</code> 是 Uint16，原始碼範圍為 0～65535；L177 先轉 float 再加 offset，得到的 q 才可能為負。不可把負電壓直接寫成負的 ADC 原始碼。${src('Include/CLA_Module.h', 340, 344)}</p>
+    <p><strong>手算例，數值為教學假設：</strong>令 offset=−32768 count、正段斜率 0.100 V/count、負段 0.101 V/count。ADC=33768 時 q=1000，得到 100 V；ADC=31768 時 q=−1000，得到 −101 V；ADC=32763 時 q=−5，走負段得到 −0.505 V。三個 ADC 原始碼皆非負；正負斜率由中心化後的 q 決定。兩段在 q=0 都得到零，但斜率可不同。L188 必須先算新舊差，L189 才覆寫歷史，交換順序會讓電容補償恆為零。</p>
     <p>CHB 同樣先加電流 offset，再選正負斜率，得到的是 <code>I_shunt</code>；這仍不是最終負載電流。${src('Source/CLA_Task.cla', 195, 203)}</p>
     <p>若要理解校正參數如何抵銷誤差，可先用單一線段推導：兩個標準點滿足 y₁=g(a₁+o)、y₂=g(a₂+o)，相減消去 offset，求得斜率，再代回求零點。這是線性校正的教學推導，不宣稱校正模組的每個狀態都直接使用此式。兩段斜率共用零點時，還應檢查正負兩側的殘差，而非只確認正滿刻度吻合。</p>
     ${math(String.raw`g=\frac{y_2-y_1}{a_2-a_1},\qquad o=\frac{y_1}{g}-a_1`)}
@@ -87,6 +88,7 @@ export const feedbackLesson = {
 
     <h2 id="mode-selection">08｜CV、CC、CP 各讀哪個量？</h2>
     <p><code>OUTPUT_STATE</code> 下由 <code>Power_Control_Mode</code> 的 switch 互斥選擇。CV 先檢查電流，再檢查功率；命中後改狀態並 break，本回合不繼續執行 CV 補償，也不立即執行新模式的 PI。CC／CP 回到 CV 另有輸出、誤差及穩定計數條件。${src('Source/Output_Control_Module.c', 71, 159)} ${src('Source/Output_Control_Module.c', 166, 269)}</p>
+    <p><strong>互斥的是本回合的更新，不是所有偏移的作用。</strong>CV 轉入 CC／CP 時沒有在該分支清除 CV 的 offset；CC／CP 初始化只將 VREF offset 3 清零，後續再更新它。CLA 始終把 offset 0～3 相加，因此已保存的 CV offset 0 可以與新的限流／限功率 offset 3 同時作用。例如原先 offset 0=+200、之後 offset 3=−500，其他偏移為零時，VREF 基值加上的合計仍是 −300。這是狀態保存與加總的算例，不保證本版重設後的 PI 會實際產生這些數值。${src('Source/Output_Control_Module.c', 103, 143)} ${src('Source/Output_Control_Module.c', 313, 344)} ${src('Source/Output_Control_Module.c', 378, 409)} ${src('Source/CLA_Task.cla', 66, 70)}</p>
     <div class="table-wrap"><table><thead><tr><th>路徑</th><th>實際回授</th><th>補償去向／條件</th></tr></thead><tbody><tr><td>CV 的 DC 部分</td><td>V_avg_display_shadow</td><td>低電壓 WAVE；高電壓 VREF；ACDC 路徑的 WAVE 有負號</td></tr><tr><td>CV 的 AC 部分</td><td>AC_V_rms_display_shadow</td><td>VREF offset 0；指定模式只接受正弦、三角</td></tr><tr><td>CC</td><td>I_rms_display_shadow</td><td>VREF offset 3</td></tr><tr><td>CP</td><td>P_display.all</td><td>VREF offset 3；已經過顯示發布流程</td></tr></tbody></table></div>
     ${codeBlock('Source/Output_Control_Module.c', 302, 304, String.raw`    sPID.CC_Control_loop.Ref = (float)sGB.sProtectSetting.I_rms_limit_level_shadow * 0.0001;
 
