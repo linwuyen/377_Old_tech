@@ -1,3 +1,6 @@
+import { DEFAULTS, PRESETS, simulateClosedLoop } from './simulation.js';
+import { renderLabGuide } from './lab-guide.js';
+
 /**
  * A numerical lesson, not a plant or hardware simulation.
  * JS Number uses double precision; the firmware fields use float32.
@@ -33,148 +36,162 @@ export function simulatePI({ kp = 1.2, ki = 0.08, limit = 1, amplitude = 1, samp
   return points;
 }
 
-const SOURCE_URL = 'https://github.com/linwuyen/ASR5K_Old/blob/5262007b56d420c74ac892692ea4d3969a3e3992/ASR5K_28377/TRACE_ASR5000_F28377S/Include/PID_Control_Module.h#L140-L184';
+const number = (value, digits = 3) => Math.abs(value) < 0.5 * 10 ** -digits ? (0).toFixed(digits) : value.toFixed(digits);
+const duration = metric => metric.status === 'measured' ? `${number(metric.value)} s` : metric.status === 'not-applicable' ? '不適用' : metric.status === 'insufficient-window' ? '觀察時間不足' : '觀察窗內未達成';
 let labCount = 0;
 
-/** Mount one self-contained, accessible lab. Returns a listener cleanup function. */
+/** Mount a deterministic, source-grounded educational closed loop. */
 export function renderLab(container) {
-  if (!container || typeof container.querySelector !== 'function') throw new TypeError('renderLab needs a DOM container.');
-  const id = `pi-lab-${++labCount}`;
-  const control = (name, title, min, max, step, value, hint) => `
-    <div class="pi-control">
-      <label for="${id}-${name}"><span>${title}</span><output data-output="${name}" for="${id}-${name}">${value}</output></label>
-      <input id="${id}-${name}" data-control="${name}" type="range" min="${min}" max="${max}" step="${step}" value="${value}">
-      <small>${hint}</small>
-    </div>`;
-  container.innerHTML = `
-    <style>
-      .pi-lab{--pi-output:#24b9a3;--pi-integral:#d59a45;--pi-muted:color-mix(in srgb,currentColor 62%,transparent)}
-      .pi-lab .lab-layout{display:grid;grid-template-columns:minmax(210px,.65fr) minmax(0,1.9fr);gap:28px;align-items:start}
-      .pi-lab .lab-controls{display:grid;gap:20px;min-width:0}
-      .pi-lab .pi-control label{display:flex;justify-content:space-between;gap:12px;font-size:14px;font-weight:600}
-      .pi-lab output,.pi-lab .pi-number{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
-      .pi-lab .pi-control output{color:var(--pi-output)}
-      .pi-lab input[type=range]{display:block;width:100%;margin:12px 0 5px;accent-color:var(--pi-output);cursor:pointer;min-height:24px}
-      .pi-lab small{color:var(--pi-muted);font-size:12px;line-height:1.65}
-      .pi-lab select{width:100%;padding:10px 11px;border:1px solid color-mix(in srgb,currentColor 22%,transparent);border-radius:7px;background:var(--panel,#171c22);color:inherit;font:inherit;font-size:13px;line-height:1.5;margin-top:8px}
-      .pi-lab .pi-mode-label{font-size:13px;font-weight:600}
-      .pi-lab .lab-chart{min-width:0;margin:0}
-      .pi-lab svg{display:block;width:100%;height:auto;overflow:visible;font-family:inherit}
-      .pi-lab svg text{fill:currentColor;font-size:12px}
-      .pi-lab .pi-legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:14px}
-      .pi-lab .pi-legend span{display:inline-flex;gap:7px;align-items:center}
-      .pi-lab .pi-legend i{display:inline-block;width:17px;border-top:3px solid var(--pi-output)}
-      .pi-lab .pi-legend .pi-integral{border-color:var(--pi-integral)}
-      .pi-lab .pi-legend .pi-limit{border-color:currentColor;border-top-style:dashed;opacity:.5}
-      .pi-lab .pi-legend .pi-count{margin-left:auto;color:var(--pi-muted)}
-      .pi-lab .pi-sample{margin:14px 0 12px}
-      .pi-lab .pi-status{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 0;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent);border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent)}
-      .pi-lab .pi-status dt{font-size:11px;color:var(--pi-muted);margin-bottom:5px}
-      .pi-lab .pi-status dd{margin:0;font-size:16px}
-      .pi-lab .pi-note{font-size:13px;line-height:1.85;color:var(--pi-muted);margin:14px 0 0}
-      .pi-lab .equation{font-size:13px;line-height:1.8;white-space:normal;padding:13px 16px;margin:22px 0 12px;border-radius:8px;background:color-mix(in srgb,currentColor 4%,transparent);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
-      .pi-lab .pi-explanation{font-size:13px;line-height:1.9;margin:12px 0}
-      .pi-lab .pi-reset{justify-self:start;font-size:12px;padding:8px 13px;cursor:pointer}
-      .pi-lab .source-link{font-size:12px;overflow-wrap:anywhere}
-      .pi-lab :focus-visible{outline:2px solid var(--pi-output);outline-offset:4px}
-      @media(max-width:720px){.pi-lab .lab-layout{grid-template-columns:1fr;gap:26px}.pi-lab .lab-controls{grid-template-columns:1fr 1fr;gap:17px}.pi-lab .pi-mode{grid-column:1/-1}.pi-lab .pi-status{gap:6px}.pi-lab .pi-status dd{font-size:14px}.pi-lab .pi-legend .pi-count{margin-left:0}}
-      @media(max-width:360px){.pi-lab .lab-controls{grid-template-columns:1fr}.pi-lab .pi-status{grid-template-columns:1fr 1fr}}
-    </style>
-    <div class="pi-lab">
-      <div class="lab-layout">
-        <div class="lab-controls">
-          <div class="pi-mode">
-            <label class="pi-mode-label" for="${id}-mode">積分更新方式</label>
-            <select id="${id}-mode" data-control="mode">
-              <option value="firmware">韌體邏輯 · 前一拍飽和時凍結</option>
-              <option value="unconditional">對照實驗 · 無條件積分（非韌體）</option>
-            </select>
-          </div>
-          ${control('kp', '比例增益 Kp', 0, 3, 0.05, 1.2, 'Up = Kp × error')}
-          ${control('ki', '積分係數 Ki', 0, 0.2, 0.005, 0.08, '每拍增加 Ki × Up；不是 Ki × error')}
-          ${control('limit', '輸出上限 OutMax', 0.25, 2, 0.05, 1, '本實驗設定 OutMin = −OutMax')}
-          ${control('amplitude', '合成誤差振幅 A', 0, 2, 0.05, 1, '第 1–50 拍：+A；第 51–100 拍：−0.35A')}
-          <button class="btn pi-reset" type="button" data-reset>還原參數</button>
-        </div>
-        <figure class="lab-chart">
-          <div class="pi-legend" aria-label="圖例">
-            <span><i aria-hidden="true"></i>輸出 Out</span>
-            <span><i class="pi-integral" aria-hidden="true"></i>積分 Ui</span>
-            <span><i class="pi-limit" aria-hidden="true"></i>上下限 ±OutMax</span>
-            <span class="pi-count">100 拍 · 無量綱</span>
-          </div>
-          <svg data-chart viewBox="0 0 700 310" role="img" aria-labelledby="${id}-chart-title ${id}-chart-description"></svg>
-          <div class="pi-sample">${control('sample', '逐拍觀察', 1, 100, 1, 51, '拖動游標，對照當拍數值與前一拍的飽和判斷。')}</div>
-          <div data-status aria-live="polite" aria-atomic="true"></div>
-          <figcaption class="pi-note">固定輸入一段合成誤差，在第 51 拍反向。這是 PI 數值序列教學，未包含電源電路、負載或閉迴路受控系統模型。</figcaption>
+  if (!container?.querySelector) throw new TypeError('renderLab needs a DOM container.');
+  const id = `closed-loop-${++labCount}`;
+  const specs = [
+    ['kp', '比例增益 Kp', 0, 4, 0.05, 'Up = Kp × e'],
+    ['ki', '每拍積分係數 Ki', 0, 0.4, 0.005, 'Ui 每拍增加 Ki × Up'],
+    ['ts', '控制取樣週期 Ts（s）', 0.005, 0.1, 0.005, '控制器呼叫間隔；改變 Ts 時保持 Ki'],
+    ['load', '負載擾動 d', 0, 1.2, 0.05, '3 s 加載、5 s 卸載；無量綱'],
+    ['limit', '輸出限幅 ±Umax', 0.5, 1.5, 0.05, '對稱限幅；模型直流增益為 1']
+  ];
+  const controlsHTML = specs.map(([key, label, min, max, step, hint]) => `<div class="cl-control">
+    <label for="${id}-${key}">${label}</label>
+    <input type="number" id="${id}-${key}-value" data-number="${key}" aria-label="${label}數值" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
+    <input type="range" id="${id}-${key}" data-param="${key}" aria-describedby="${id}-${key}-hint" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
+    <small id="${id}-${key}-hint">${hint}</small></div>`).join('');
+  container.innerHTML = `<div class="closed-loop-lab">
+    <div class="cl-intro"><span class="cl-badge">CLOSED LOOP / 一階教學模型</span><button type="button" class="cl-text-button" data-guide>模型、公式與原碼 ↓</button></div>
+    <div class="cl-presets" role="group" aria-label="實驗情境">${PRESETS.map(p => `<button type="button" data-preset="${p.id}" aria-pressed="false" title="${p.description}">${p.label}</button>`).join('')}</div>
+    <p class="cl-preset-note" data-preset-note>每次調整即從零初始狀態重算完整實驗。</p>
+    <div class="cl-workbench">
+      <section class="cl-controls" aria-label="閉迴路模擬參數">
+        <div class="cl-mode"><label for="${id}-mode">積分更新方式</label><select id="${id}-mode" data-mode><option value="firmware">原碼邏輯 · 上一拍飽和凍結</option><option value="unconditional">對照實驗 · 無條件積分</option></select></div>
+        ${controlsHTML}
+        <p class="cl-parameter-error" data-parameter-error role="status" hidden>請輸入範圍內且符合步進的數值；圖表保留上次有效結果。</p>
+        <p class="cl-equivalent" data-equivalent></p>
+        <label class="cl-checkbox"><input type="checkbox" data-compare checked>疊加另一種積分方式的對照曲線</label>
+        <button type="button" class="btn secondary cl-reset" data-reset>還原預設參數</button>
+      </section>
+      <section class="cl-results" aria-label="模擬結果">
+        <div class="cl-metrics" data-metrics></div>
+        <p class="cl-feasibility" data-feasibility></p>
+        <div class="cl-legend"><span class="cl-y">回授 y / 輸出 u</span><span class="cl-r">目標 r / 限幅</span><span class="cl-i">積分 Ui</span><span class="cl-other" data-compare-legend>對照</span></div>
+        <figure class="cl-figure"><div class="cl-chart-scroll" tabindex="0" aria-label="響應圖表，可水平捲動"><svg data-chart viewBox="0 0 900 550" role="img" aria-labelledby="${id}-title ${id}-desc"></svg></div>
+          <figcaption>橙色底色：負載期間；紅色上緣：輸出限幅；橙色上緣：積分凍結。兩圖共用時間軸、縱軸各自縮放。點選圖表或拖動下方游標逐拍核對。</figcaption>
         </figure>
-      </div>
-      <div class="equation">e[n] = Ref − Fdb &nbsp;·&nbsp; Up[n] = Kp × e[n]<br>Ui[n] = Ui[n−1] + Ki × Up[n]（僅前一拍 Out = OutPreSat 時）<br>OutPreSat[n] = Up[n] + Ui[n] &nbsp;·&nbsp; Out[n] = clamp(OutPreSat[n], −OutMax, OutMax)</div>
-      <p class="pi-explanation"><strong>先看上一拍，再算這一拍。</strong>韌體在更新 OutPreSat 前比較 Out 與 OutPreSat，因此即使當拍誤差反向，也會先沿用前一拍的飽和判斷。當前一拍剛好等於上限、沒有被截斷時，積分仍可更新。切換到「無條件積分」可觀察持續累積的差異；該選項僅用於對照。</p>
-      <p class="pi-note">數值條件：Ui、Out、OutPreSat 初始值皆為 0。網頁使用 JavaScript 雙精度浮點數；韌體欄位為 float32，因此此圖不是位元精確的韌體模擬。Ki 的原始註解為 T/Ti，本實驗不指定真實取樣週期，也不提供硬體調參建議。</p>
-      <p><a class="source-link" href="${SOURCE_URL}" target="_blank" rel="noopener noreferrer">查看依據：PID_Control_Module.h · runPI · L140–184 ↗</a></p>
-    </div>`;
+        <div class="cl-cursor"><label for="${id}-sample">逐拍觀察 <output data-sample-label for="${id}-sample"></output></label><input id="${id}-sample" type="range" min="0" max="800" value="500" step="1" data-sample><div class="cl-jumps"><button type="button" data-jump="step">跳至階躍</button><button type="button" data-jump="loadOn">跳至加載</button><button type="button" data-jump="loadOff">跳至卸載</button></div></div>
+        <div class="cl-sample-status" data-status aria-live="polite" aria-atomic="true"></div>
+        <details class="cl-extra"><summary>更多指標與量測範圍</summary><div data-extra-metrics></div></details>
+      </section>
+    </div>
+    <p class="cl-model-note">假設：τ = 0.25 s、直流增益 = 1、初始狀態 = 0；目標 0 → 0.6。所有振幅皆無量綱。被控體為教學假設，未由 ASR5000 功率級辨識；控制器依原碼順序、以 JavaScript 雙精度計算。原碼連結需登入具有來源儲存庫讀取權限的 GitHub 帳號。</p>
+    <div class="cl-guide" data-lab-guide>${renderLabGuide()}</div>
+  </div>`;
 
-  const controls = Object.fromEntries([...container.querySelectorAll('[data-control]')].map(element => [element.dataset.control, element]));
-  const chart = container.querySelector('[data-chart]');
-  const status = container.querySelector('[data-status]');
-  const format = value => Math.abs(value) < 0.00005 ? '0.000' : value.toFixed(3);
+  const find = selector => container.querySelector(selector);
+  const ranges = Object.fromEntries([...container.querySelectorAll('[data-param]')].map(el => [el.dataset.param, el]));
+  const numbers = Object.fromEntries([...container.querySelectorAll('[data-number]')].map(el => [el.dataset.number, el]));
+  const sample = find('[data-sample]');
+  const chart = find('[data-chart]');
+  let options = { ...DEFAULTS };
+  let result;
+  let comparison;
+  let selectedTime = 5;
 
-  function update() {
-    const options = { kp: +controls.kp.value, ki: +controls.ki.value, limit: +controls.limit.value, amplitude: +controls.amplitude.value, mode: controls.mode.value };
-    const points = simulatePI(options);
-    const selected = points[+controls.sample.value - 1];
-    for (const [name, element] of Object.entries(controls)) {
-      const output = container.querySelector(`[data-output="${name}"]`);
-      if (output) output.value = name === 'sample' ? `${element.value} / 100` : name === 'ki' ? (+element.value).toFixed(3) : (+element.value).toFixed(2);
+  function drawChart() {
+    const { points, events } = result;
+    const selected = points[+sample.value];
+    const compare = find('[data-compare]').checked;
+    const x = t => 65 + t / events.end * 810;
+    const extent = values => {
+      const low = Math.min(0, ...values), high = Math.max(0.1, ...values);
+      const padding = Math.max(0.08, (high - low) * 0.13);
+      return [low - padding, high + padding];
+    };
+    const responseExtent = extent([...points.map(p => p.y), options.target ?? 0.6, ...(compare ? comparison.points.map(p => p.y) : [])]);
+    const commandExtent = extent([...points.map(p => p.ui), options.limit, -options.limit]);
+    const y = (value, extent, top, bottom) => bottom - (value - extent[0]) / (extent[1] - extent[0]) * (bottom - top);
+    const responseY = v => y(v, responseExtent, 45, 235);
+    const commandY = v => y(v, commandExtent, 320, 505);
+    const path = (rows, key, fy, step = false) => rows.map((p, i) => i ? `${step ? 'H' + number(x(p.t), 2) + 'V' + number(fy(p[key]), 2) : 'L' + number(x(p.t), 2) + ',' + number(fy(p[key]), 2)}` : `M${number(x(p.t), 2)},${number(fy(p[key]), 2)}`).join(' ');
+    const panel = (scale, fy, top, bottom, title) => {
+      const grid = Array.from({ length: 5 }, (_, i) => scale[0] + (scale[1] - scale[0]) * i / 4).map(v => `<line x1="65" x2="875" y1="${fy(v)}" y2="${fy(v)}" class="cl-grid"/><text x="54" y="${fy(v) + 4}" text-anchor="end">${number(v, 2)}</text>`).join('');
+      const ticks = [0, 2, 4, 6, events.end].map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${bottom}" class="cl-grid"/><text x="${x(t)}" y="${bottom + 20}" text-anchor="middle">${number(t, t === events.end && t % 1 ? 2 : 0)}</text>`).join('');
+      return `<text x="65" y="${top - 22}" class="cl-panel-title">${title}</text><rect x="${x(events.loadOn)}" y="${top}" width="${x(events.loadOff) - x(events.loadOn)}" height="${bottom - top}" class="cl-load-zone"/>${grid}${ticks}`;
+    };
+    const eventLines = [['step', '目標階躍'], ['loadOn', '加載'], ['loadOff', '卸載']].map(([key, label]) => `<line x1="${x(events[key])}" x2="${x(events[key])}" y1="45" y2="505" class="cl-event"/><text x="${x(events[key]) + 5}" y="282">${label}</text>`).join('');
+    const bars = (flag, top, css) => points.filter(p => p[flag] && p.dt > 0).map(p => `<rect x="${x(p.t)}" y="${top}" width="${Math.max(0.5, x(p.t + p.dt) - x(p.t))}" height="4" class="${css}"/>`).join('');
+    chart.innerHTML = `<title id="${id}-title">PI 閉迴路階躍、負載與飽和恢復</title><desc id="${id}-desc">上圖顯示目標及回授，下圖顯示控制輸出與積分。${number(events.step)} 秒目標升至 0.6，${number(events.loadOn)} 秒加載 ${number(options.load)}，${number(events.loadOff)} 秒卸載。階躍超調量 ${number(result.metrics.overshootPercent, 1)}%。</desc>
+      ${panel(responseExtent, responseY, 45, 235, '01 / 目標與回授  r, y')}${panel(commandExtent, commandY, 320, 505, '02 / 控制輸出與積分  u, Ui')}${eventLines}
+      ${bars('saturated', 37, 'cl-saturation')}${bars('frozen', 312, 'cl-freeze')}
+      <path d="${path(points, 'reference', responseY, true)}" class="cl-trace cl-reference"/>
+      ${[-options.limit, options.limit].map(v => `<line x1="65" x2="875" y1="${commandY(v)}" y2="${commandY(v)}" class="cl-reference"/>`).join('')}
+      ${compare ? `<path d="${path(comparison.points, 'y', responseY)}" class="cl-trace cl-comparison"/><path d="${path(comparison.points, 'out', commandY, true)}" class="cl-trace cl-comparison"/>` : ''}
+      <path d="${path(points, 'y', responseY)}" class="cl-trace cl-response"/><path d="${path(points, 'ui', commandY, true)}" class="cl-trace cl-integral"/><path d="${path(points, 'out', commandY, true)}" class="cl-trace cl-response"/>
+      <line x1="${x(selected.t)}" x2="${x(selected.t)}" y1="45" y2="505" class="cl-selected"/><circle cx="${x(selected.t)}" cy="${responseY(selected.y)}" r="4" class="cl-selected-dot"/><circle cx="${x(selected.t)}" cy="${commandY(selected.out)}" r="4" class="cl-selected-dot"/>
+      <text x="875" y="545" text-anchor="end">時間 t（s）</text>`;
+    find('[data-sample-label]').value = `n = ${selected.n} · t = ${number(selected.t)} s`;
+    const previousClipped = selected.previousOut !== selected.previousPre;
+    find('[data-status]').innerHTML = `<dl class="cl-values">${[['Ref', selected.reference], ['Fdb = y', selected.y], ['Err', selected.error], ['Up', selected.up], ['Ui', selected.ui], ['OutPreSat', selected.pre], ['Out = u', selected.out], ['負載 d', selected.load]].map(([label, value]) => `<div><dt>${label}</dt><dd>${number(value)}</dd></div>`).join('')}</dl><p>上一拍 Out = <b>${number(selected.previousOut)}</b>，OutPreSat = <b>${number(selected.previousPre)}</b>（${previousClipped ? '不相等' : '相等'}）→ 本拍積分<strong>${selected.frozen ? '凍結' : '更新'}</strong>${options.mode === 'unconditional' ? '（無條件積分對照，忽略上一拍限幅）' : ''}；本拍輸出<strong>${selected.saturated ? '已限幅' : '未限幅'}</strong>。${selected.dt === 0 ? '此為最後觀察點，控制值不再推進被控體。' : '此輸出經零階保持，決定下一拍 y。'} 顯示值四捨五入至三位；相等與限幅判定使用未四捨五入數值。</p>`;
+  }
+
+  function calculate() {
+    result = simulateClosedLoop(options);
+    comparison = simulateClosedLoop({ ...options, mode: options.mode === 'firmware' ? 'unconditional' : 'firmware' });
+    sample.max = result.points.length - 1;
+    sample.value = Math.min(result.points.length - 1, Math.round(selectedTime / options.ts));
+    selectedTime = result.points[+sample.value].t;
+    const { metrics: m, events } = result;
+    const metricCard = (label, value, hint) => `<div><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`;
+    find('[data-metrics]').innerHTML = metricCard('階躍超調量', `${number(m.overshootPercent, 1)} %`, '加載前峰值相對 0.6') + metricCard('階躍整定時間', duration(m.settlingTime), '階躍後進入 ±2% 帶') + metricCard('累計飽和時間', `${number(m.saturationDuration)} s`, '全觀察窗內輸出被截斷') + metricCard('卸載後回復時間', duration(m.recoveryTime), '卸載後回到 ±2% 帶');
+    find('[data-equivalent]').innerHTML = options.ki === 0 ? 'Ki = 0：純 P 控制；Ti → ∞。' : `等效 Ti = Ts / Ki = <b>${number(options.ts / options.ki)} s</b><br>連續積分增益 Kp·Ki / Ts = <b>${number(options.kp * options.ki / options.ts)} s⁻¹</b>`;
+    const required = 0.6 + options.load;
+    // Compare displayed physical margins tolerantly; keep runPI's exact gate unchanged.
+    const hasMargin = required < options.limit - 1e-10;
+    const overloaded = required > options.limit + 1e-10;
+    find('[data-feasibility]').innerHTML = `加載後維持 y = 0.6 需要 u = 0.6 + d = <b>${number(required, 2)}</b>。${overloaded ? '<strong>超出 Umax：此階段目標不可達，觀察卸載後恢復。</strong>' : !hasMargin ? '剛好等於 Umax，沒有向上的控制裕度。' : '低於 Umax，具有靜態控制裕度；動態仍取決於參數。'}`;
+    find('[data-extra-metrics]').innerHTML = `<dl class="cl-more-values"><div><dt>10–90% 上升時間</dt><dd>${duration(m.riseTime)}</dd></div><div><dt>加載前峰值</dt><dd>${number(m.peak)}</dd></div><div><dt>卸載後首次解除限幅</dt><dd>${duration(m.saturationExit)}</dd></div><div><dt>末點誤差 Ref − Fdb</dt><dd>${number(m.finalError)}</dd></div></dl><p>階躍指標使用 [${number(events.step)}, ${number(events.loadOn)}) s；卸載回復使用 [${number(events.loadOff)}, ${number(events.end)}] s。整定判定為進入目標 ±0.012 後，到該觀察窗末端均未離開，且帶內尾段至少 0.25 s；太晚入帶時顯示「觀察時間不足」。「不適用」表示負載為零，或解除限幅指標在卸載前一拍未限幅；「觀察窗內未達成」不推論更長時間的結果。解除限幅與回授收斂是兩個不同事件。</p><p>對照模式：${options.mode === 'firmware' ? '無條件積分' : '原碼凍結'}，超調 ${number(comparison.metrics.overshootPercent, 1)}%，卸載回復 ${duration(comparison.metrics.recoveryTime)}。事件對齊至名義時間之後的第一個控制取樣；本次共 ${result.points.length} 個觀察點。</p>`;
+    find('[data-compare-legend]').textContent = options.mode === 'firmware' ? '對照：無條件積分' : '對照：原碼凍結';
+    find('[data-compare-legend]').hidden = !find('[data-compare]').checked;
+    drawChart();
+  }
+
+  function setOptions(values, presetId = '') {
+    options = { ...DEFAULTS, ...values };
+    for (const [key] of specs) ranges[key].value = numbers[key].value = options[key];
+    find('[data-mode]').value = options.mode;
+    find('[data-parameter-error]').hidden = true;
+    container.querySelectorAll('[data-preset]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.preset === presetId)));
+    find('[data-preset-note]').textContent = PRESETS.find(p => p.id === presetId)?.description || '每次調整即從零初始狀態重算完整實驗。';
+    calculate();
+  }
+  function input(event) {
+    const target = event.target;
+    if (target === sample) { selectedTime = result.points[+sample.value].t; drawChart(); return; }
+    if (target.matches('[data-compare]')) { find('[data-compare-legend]').hidden = !target.checked; drawChart(); return; }
+    const key = target.dataset.param || target.dataset.number;
+    if (key) {
+      if (!target.validity.valid || target.value === '') { find('[data-parameter-error]').hidden = false; return; }
+      options[key] = +target.value;
+      ranges[key].value = numbers[key].value = target.value;
+    } else if (target.matches('[data-mode]')) options.mode = target.value;
+    else return;
+    find('[data-parameter-error]').hidden = Object.values(numbers).every(el => el.validity.valid && el.value !== '');
+    container.querySelectorAll('[data-preset]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    find('[data-preset-note]').textContent = '自訂參數 · 每次調整均從零初始狀態重新計算。';
+    calculate();
+  }
+  function click(event) {
+    const button = event.target.closest('button');
+    if (button?.hasAttribute('data-reset')) { selectedTime = 5; setOptions(DEFAULTS); }
+    else if (button?.dataset.preset) { selectedTime = 5; setOptions(PRESETS.find(p => p.id === button.dataset.preset).options, button.dataset.preset); }
+    else if (button?.dataset.jump) { selectedTime = result.events[button.dataset.jump]; sample.value = Math.round(selectedTime / options.ts); drawChart(); }
+    else if (button?.hasAttribute('data-guide')) find('[data-lab-guide]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (chart.contains(event.target)) {
+      const bounds = chart.getBoundingClientRect();
+      selectedTime = Math.max(0, Math.min(result.events.end, ((event.clientX - bounds.left) / bounds.width * 900 - 65) / 810 * result.events.end));
+      sample.value = Math.round(selectedTime / options.ts); selectedTime = result.points[+sample.value].t; drawChart();
     }
-    const frame = { left: 54, right: 680, top: 30, bottom: 263 };
-    const max = Math.max(options.limit, ...points.map(point => Math.abs(point.ui)), 0.1) * 1.18;
-    const x = n => frame.left + ((n - 1) / 99) * (frame.right - frame.left);
-    const y = value => (frame.top + frame.bottom) / 2 - (value / max) * (frame.bottom - frame.top) / 2;
-    const path = key => points.map((point, index) => `${index ? 'L' : 'M'}${x(point.n).toFixed(2)},${y(point[key]).toFixed(2)}`).join(' ');
-    const grid = [-max, -max / 2, 0, max / 2, max].map(value => `
-      <line x1="${frame.left}" x2="${frame.right}" y1="${y(value)}" y2="${y(value)}" stroke="currentColor" opacity="${value === 0 ? '.22' : '.08'}"/>
-      <text x="44" y="${y(value) + 4}" text-anchor="end" opacity=".6">${value.toFixed(1)}</text>`).join('');
-    const ticks = [1, 25, 50, 75, 100].map(n => `<text x="${x(n)}" y="285" text-anchor="middle" opacity=".6">${n}</text>`).join('');
-    const limitLines = [-options.limit, options.limit].map(value => `<line x1="${frame.left}" x2="${frame.right}" y1="${y(value)}" y2="${y(value)}" stroke="currentColor" stroke-dasharray="5 5" opacity=".4"/>`).join('');
-    const frozenTicks = points.filter(point => point.frozen).map(point => `<line x1="${x(point.n)}" x2="${Math.min(x(point.n) + 4, frame.right)}" y1="${frame.top - 9}" y2="${frame.top - 9}" stroke="var(--pi-integral)" stroke-width="3" opacity=".55"/>`).join('');
-    chart.innerHTML = `
-      <title id="${id}-chart-title">PI 輸出與積分的 100 拍數值序列</title>
-      <desc id="${id}-chart-description">綠線為輸出，橙線為積分，虛線為正負 ${options.limit} 的輸出限值。第 51 拍誤差反向。上緣橙色短線表示該拍積分凍結。${options.mode === 'firmware' ? '使用韌體凍結邏輯。' : '使用非韌體的無條件積分對照模式。'}</desc>
-      ${grid}${ticks}${limitLines}${frozenTicks}
-      <line x1="${x(51)}" x2="${x(51)}" y1="${frame.top}" y2="${frame.bottom}" stroke="currentColor" stroke-dasharray="3 5" opacity=".22"/>
-      <text x="${x(51) + 7}" y="16" opacity=".65">誤差反向</text>
-      <text x="${frame.left}" y="16" opacity=".6">積分凍結區間</text>
-      <path d="${path('ui')}" fill="none" stroke="var(--pi-integral)" stroke-width="2.5" stroke-linejoin="round"/>
-      <path d="${path('out')}" fill="none" stroke="var(--pi-output)" stroke-width="3" stroke-linejoin="round"/>
-      <line x1="${x(selected.n)}" x2="${x(selected.n)}" y1="${frame.top}" y2="${frame.bottom}" stroke="currentColor" opacity=".45"/>
-      <circle cx="${x(selected.n)}" cy="${y(selected.out)}" r="5" fill="var(--pi-output)" stroke="var(--panel,#171c22)" stroke-width="2"/>
-      <circle cx="${x(selected.n)}" cy="${y(selected.ui)}" r="4" fill="var(--pi-integral)" stroke="var(--panel,#171c22)" stroke-width="2"/>
-      <text x="680" y="307" text-anchor="end" opacity=".6">取樣拍數 n（非真實時間）</text>`;
-    const gate = options.mode === 'unconditional' ? '無條件更新（對照模式）' : selected.frozen ? '凍結：前一拍曾被限幅' : '更新：前一拍未被限幅';
-    const saturated = selected.out !== selected.pre;
-    status.innerHTML = `
-      <dl class="pi-status">
-        <div><dt>誤差 e · 第 ${selected.n} 拍</dt><dd class="pi-number">${format(selected.error)}</dd></div>
-        <div><dt>比例 Up</dt><dd class="pi-number">${format(selected.up)}</dd></div>
-        <div><dt>積分 Ui</dt><dd class="pi-number">${format(selected.ui)}</dd></div>
-        <div><dt>輸出 Out</dt><dd class="pi-number">${format(selected.out)}</dd></div>
-      </dl>
-      <p class="pi-note">積分狀態：<strong>${gate}</strong>。當拍 OutPreSat = <span class="pi-number">${format(selected.pre)}</span>，${saturated ? '輸出已被限幅' : '輸出未被限幅'}。</p>`;
   }
-
-  function reset(event) {
-    if (!event.target.closest('[data-reset]')) return;
-    const defaults = { kp: 1.2, ki: 0.08, limit: 1, amplitude: 1, sample: 51, mode: 'firmware' };
-    for (const [name, value] of Object.entries(defaults)) controls[name].value = value;
-    update();
-  }
-  container.addEventListener('input', update);
-  container.addEventListener('click', reset);
-  update();
-  return () => {
-    container.removeEventListener('input', update);
-    container.removeEventListener('click', reset);
-  };
+  container.addEventListener('input', input);
+  container.addEventListener('click', click);
+  setOptions(DEFAULTS);
+  return () => { container.removeEventListener('input', input); container.removeEventListener('click', click); };
 }

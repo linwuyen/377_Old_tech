@@ -5,17 +5,19 @@ import { systemLessons } from '../lessons/system.js';
 import { controlLessons } from '../lessons/control.js';
 import { sourceExcerpts, equations } from '../lessons/shared.js';
 import { diagramInfo, diagramSVG } from '../lessons/diagrams.js';
+import { renderLabGuide } from '../lab-guide.js';
 const root=new URL('../',import.meta.url);
 const lessons=[...systemLessons,...controlLessons];
 assert.equal(lessons.length,8,'Eight complete lessons are required');
 assert.equal(new Set(lessons.map(l=>l.id)).size,8,'Lesson IDs must be unique');
 assert.deepEqual(lessons.map(l=>Number(l.number)).sort((a,b)=>a-b),[1,2,3,4,5,6,7,8]);
 const validIds=new Set([...lessons.map(l=>l.id),'','lab','sources']);
+const labGuide = renderLabGuide();
 let citations=0;
-for(const lesson of lessons){
+for(const lesson of [...lessons, {id:'lab',number:'LAB',title:'PI closed loop',summary:'Lab model and source',duration:'Interactive',category:'Lab',body:labGuide}]){
   for(const key of ['id','number','title','summary','duration','category','body'])assert.ok(lesson[key],`${lesson.id} requires ${key}`);
   assert.ok((lesson.body.match(/<h2\b/g)||[]).length>=3,`${lesson.id} needs structured explanation`);
-  assert.ok(lesson.body.includes('<details>'),`${lesson.id} needs a reading exercise`);
+  assert.ok(lesson.id==='lab'||lesson.body.includes('<details>'),`${lesson.id} needs a reading exercise`);
   assert.ok(lesson.body.includes('5262007b56d420c74ac892692ea4d3969a3e3992'),`${lesson.id} needs pinned source citations`);
   assert.ok(!/<script\b|javascript:/i.test(lesson.body),'Unexpected active content');
   for(const match of lesson.body.matchAll(/href="#\/([^"?]*)/g))assert.ok(validIds.has(match[1]),`Broken route ${match[1]}`);
@@ -28,7 +30,7 @@ for(const lesson of lessons){
     }
   }
 }
-for(const file of ['index.html','styles.css','deep-content.css','app.js','lab.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
+for(const file of ['index.html','styles.css','deep-content.css','lab.css','app.js','lab.js','lab-guide.js','simulation.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
 const html=await readFile(new URL('index.html',root),'utf8');
 assert.ok(html.includes('lang="zh-Hant"'));
 for(const [,file] of html.matchAll(/(?:href|src)="\.\/([^"#]+)"/g))await access(new URL(file,root));
@@ -47,4 +49,5 @@ for(const name of Object.keys(diagramInfo)){
 }
 const fontCSS=await readFile(new URL('vendor/katex/katex.min.css',root),'utf8');
 for(const [,path]of fontCSS.matchAll(/url\(([^)]+)\)/g))await access(new URL(`vendor/katex/${path.replace(/["']/g,'')}`,root));
-console.log(`Verified ${lessons.length} lessons, ${citations} citations, ${equations.length} strict-rendered formulas, ${Object.keys(diagramInfo).length} diagrams, ${sourceExcerpts.length} line-numbered excerpts and local fonts/assets.${process.argv[2]?' All source paths/ranges and displayed code match the original.':''}`);
+assert.ok(labGuide.includes('<title')&&labGuide.includes('<desc'),'Lab diagram needs text alternatives');
+console.log(`Verified ${lessons.length} lessons + closed-loop guide, ${citations} citations, ${equations.length} strict-rendered formulas, ${Object.keys(diagramInfo).length + 1} diagrams, ${sourceExcerpts.length} line-numbered excerpts and local fonts/assets.${process.argv[2]?' All source paths/ranges and displayed code match the original.':''}`);
