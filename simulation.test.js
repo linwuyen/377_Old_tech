@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULTS, PRESETS, simulateClosedLoop } from './simulation.js';
+import { createLoopModel } from './loop-model.js';
 
 const close = (actual, expected, tolerance = 1e-10) => assert.ok(
   Math.abs(actual - expected) <= tolerance, `${actual} ≠ ${expected}`,
@@ -154,4 +155,93 @@ test('invalid and unbounded inputs are rejected before a trajectory can contain 
     { limit: 0 }, { ts: 0 }, { ts: 0.2 }, { ts: 0.0001 }, { mode: 'invented' },
     { kp: 1e308, ki: 1e308 },
   ]) assert.throws(() => simulateClosedLoop(options), RangeError);
+});
+
+test('zero added delay and a bypassed filter exactly preserve baseline samples', () => {
+  const baseline = simulateClosedLoop();
+  const explicit = simulateClosedLoop({ delaySamples: 0, filterEnabled: false, cutoffHz: 1000 });
+  assert.deepEqual(explicit.points, baseline.points);
+  assert.deepEqual(explicit.metrics, baseline.metrics);
+  assert.ok(explicit.points.every(point => point.feedback === point.y && point.appliedOut === point.out));
+});
+
+test('control delay holds command history and shifts first plant motion by the requested samples', () => {
+  for (const delaySamples of [1, 3, 8]) {
+    const result = simulateClosedLoop({ delaySamples, load: 0 });
+    const step = result.events.stepIndex;
+    for (let offset = 0; offset <= delaySamples; offset++) close(result.points[step + offset].y, 0);
+    close(result.points[step + delaySamples].appliedOut, result.points[step].out);
+    close(result.points[step + delaySamples + 1].y, (1 - Math.exp(-0.01 / 0.25)) * result.points[step].out);
+    for (const point of result.points) {
+      close(point.appliedOut, point.n >= delaySamples ? result.points[point.n - delaySamples].out : 0);
+    }
+  }
+});
+
+test('integral gate observes the controller previous limit even while the actuator is delayed', () => {
+  const result = simulateClosedLoop({ kp: 4, ki: 0.4, delaySamples: 4 });
+  const first = result.points[result.events.stepIndex];
+  const next = result.points[first.n + 1];
+  assert.equal(first.out, 1);
+  assert.equal(first.appliedOut, 0);
+  assert.equal(next.appliedOut, 0);
+  assert.equal(next.frozen, true);
+  close(next.ui, first.ui);
+});
+
+test('measurement filter matches independent convolution with its impulse response', () => {
+  const options = { kp: 0, load: 0.4, filterEnabled: true, cutoffHz: 2, ts: 0.02 };
+  const result = simulateClosedLoop(options);
+  const { filter: { p, c } } = createLoopModel(options);
+  for (const index of [151, 157, 175, 249, 250, 275]) {
+    let expected = c * result.points[index].y;
+    for (let lag = 1; lag <= index; lag++) expected += c * (1 + p) * p ** (lag - 1) * result.points[index - lag].y;
+    close(result.points[index].feedback, expected);
+  }
+  assert.ok(result.points.some(point => Math.abs(point.feedback - point.y) > 0.01));
+});
+
+test('prewarped bilinear cutoff is half power with -45 degree phase and unity DC gain', () => {
+  for (const cutoffHz of [2, 10, 40]) {
+    const { ts, filter: { c, p } } = createLoopModel({ filterEnabled: true, cutoffHz });
+    close(2 * c / (1 - p), 1);
+    const theta = 2 * Math.PI * cutoffHz * ts;
+    let output = 0, previousInput = 0, real = 0, imag = 0;
+    const discard = 1000, samples = 5000;
+    for (let n = 0; n < discard + samples; n++) {
+      const input = Math.cos(theta * n);
+      output = p * output + c * (input + previousInput);
+      previousInput = input;
+      if (n >= discard) {
+        real += 2 * output * Math.cos(theta * n) / samples;
+        imag -= 2 * output * Math.sin(theta * n) / samples;
+      }
+    }
+    close(Math.hypot(real, imag), Math.SQRT1_2, 1e-10);
+    close(Math.atan2(imag, real), -Math.PI / 4, 1e-10);
+  }
+});
+
+test('filtered feedback drives error while settling metrics remain tied to raw plant output', () => {
+  const result = simulateClosedLoop({ filterEnabled: true, cutoffHz: 2, delaySamples: 2 });
+  assert.ok(result.points.some(point => Math.abs(point.feedback - point.y) > 0.001));
+  for (const point of result.points) close(point.error, point.reference - point.feedback);
+  const rawPeak = Math.max(...result.points.slice(result.events.stepIndex, result.events.loadOnIndex).map(point => point.y));
+  close(result.metrics.peak, rawPeak);
+  close(result.metrics.finalError, 0.6 - result.points.at(-1).y);
+  const baseline = simulateClosedLoop({ kp: 0, load: 0.4 });
+  const filtered = simulateClosedLoop({ kp: 0, load: 0.4, filterEnabled: true });
+  assert.deepEqual(filtered.points.map(point => point.y), baseline.points.map(point => point.y));
+  assert.deepEqual(filtered.metrics, baseline.metrics);
+});
+
+test('delay/filter validation rejects ambiguous or out-of-band model settings', () => {
+  for (const options of [
+    { delaySamples: -1 }, { delaySamples: 0.5 }, { delaySamples: 9 },
+    { filterEnabled: 1 }, { cutoffHz: 0 }, { cutoffHz: NaN },
+    { filterEnabled: true, cutoffHz: 50, ts: 0.01 },
+    { filterEnabled: true, cutoffHz: 5, ts: 0.1 },
+  ]) assert.throws(() => simulateClosedLoop(options), RangeError);
+  assert.doesNotThrow(() => simulateClosedLoop({ filterEnabled: true, cutoffHz: 4.5, ts: 0.1 }));
+  assert.doesNotThrow(() => simulateClosedLoop({ filterEnabled: false, cutoffHz: 1000 }));
 });

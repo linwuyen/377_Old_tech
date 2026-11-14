@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Source-grounded Traditional Chinese control engineering tutorials for ASR5000 F28377S",
   "scripts": {
-    "test": "node --test lab.test.js simulation.test.js frequency.test.js",
+    "test": "node --test lab.test.js simulation.test.js frequency.test.js polynomial.test.js",
     "check": "node scripts/check.mjs",
     "dev": "node scripts/serve.mjs",
     "vendor:math": "node scripts/vendor-math.mjs"

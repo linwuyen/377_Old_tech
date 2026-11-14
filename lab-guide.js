@@ -7,10 +7,11 @@ export function renderLabGuide() {
   const id = `closed-loop-guide-${++guideCount}`;
   return `
   <section class="lab-theory" aria-labelledby="${id}-heading">
+    <p class="cl-baseline-note">01–05 節先推導基準設定：額外延遲 D=0、量測低通旁路。若啟用延遲或低通，請接著閱讀 11–15 節；目前圖表依控制面板的實際設定運算。</p>
     <h2 id="${id}-heading">01｜把回授接回來：這個模型代表什麼</h2>
-    <p>本實驗以正規化的一階系統作為被控體，狀態 y 是量測回授，u 是限幅後的致動命令，d 是抵消致動能力的負載擾動。所有振幅都無量綱；只有時間以秒表示。時間常數固定為 τ=0.25 s、直流增益為 1，<strong>這些是教學假設，沒有從 ASR5000 功率級辨識而來</strong>。控制器則依 <code>runPI</code> 的狀態更新順序運算。</p>
+    <p>本實驗以正規化的一階系統作為被控體，狀態 y 是量測回授，u 是限幅後的致動命令，d 是抵消致動能力的負載擾動。所有振幅都無量綱；只有時間以秒表示。時間常數固定為 τ=0.25 s、直流增益為 1，<strong>這些是教學假設，沒有從 ASR5000 功率級辨識而來</strong>。基準控制器則依 <code>runPI</code> 的狀態更新順序運算。</p>
     <figure class="control-diagram">
-      <div class="diagram-toolbar"><span>CLOSED LOOP / 簡化被控體與韌體 PI</span></div>
+      <div class="diagram-toolbar"><span>BASELINE / D=0 · 低通旁路</span></div>
       <div class="diagram-scroll" tabindex="0" aria-label="閉迴路方塊圖，可水平捲動">
         <svg class="control-svg" viewBox="0 0 1000 280" role="img" aria-labelledby="${id}-diagram-title ${id}-diagram-desc" xmlns="http://www.w3.org/2000/svg">
           <title id="${id}-diagram-title">具有負載擾動與輸出限幅的離散 PI 閉迴路</title>
@@ -43,7 +44,7 @@ export function renderLabGuide() {
           <text x="290" y="184" text-anchor="middle" fill="#7a6240" font-size="13" font-family="system-ui, sans-serif">u* 與 u 的上一拍記錄保存在 PI 內部</text>
         </svg>
       </div>
-      <figcaption>從 y[n] 算出當拍 u[n]，保持一個 Ts，再得到 y[n+1]。圖中的一拍是控制器呼叫週期，沒有另加計算延遲、ADC 濾波或 DAC 動態。</figcaption>
+      <figcaption>從 y[n] 算出當拍 u[n]，保持一個 Ts，再得到 y[n+1]。此基準圖的一拍是控制器呼叫週期，未加可選的 D 拍延遲與量測低通；擴充圖見第 11 節。</figcaption>
     </figure>
     ${math(String.raw`\tau\frac{dy}{dt}+y=u-d,\qquad \tau=0.25\ \mathrm{s}`)}
     <p>參考在 0.5 s 從 0 階躍到 0.6，3 s 加載、5 s 卸載，觀察至不晚於 8 s 的最後一個取樣點；事件都在第一個不早於指定時間的控制拍發生，畫面顯示實際拍點。初始 y、Ui、Out、OutPreSat 均為 0。穩態若要維持 y=r，必須有 u=r+d；因此 <strong>0.6+d&gt;L 時，負載期間的目標超過本模型的可用輸出</strong>，加大增益不能補出缺少的致動範圍。</p>
@@ -60,7 +61,7 @@ export function renderLabGuide() {
     <p><strong>拖動 Ts 時，本實驗保留畫面上的 Ki 數值。</strong> 例如 Kp=1.2、Ki=0.04、Ts=10 ms，等效 Ti=0.25 s、平行式積分增益為 4.8 s⁻¹；改成 Ts=20 ms，兩者變成 0.5 s 與 2.4 s⁻¹。若要維持 Ti，需手動把 Ki 同比例增加。Ki=0 時沒有積分作用。這裡的 Ts 指該 PI 的呼叫間隔，不能直接拿 Timer0 或 CLA 的取樣頻率代入。${src('Include/PID_Control_Module.h', 142, 145)} ${src('Source/main.c', 332, 342)}</p>
 
     <h2 id="${id}-code">03｜沿著一拍游標，對照原始 C 的執行順序</h2>
-    <p><strong>A．讀回授、算比例。</strong> 圖中的 y 是該拍開始時的回授；先計算誤差 e=r−y，再得到 Up。新的 u 要到接下來的保持區間才影響被控體，不能把 y[n+1] 拿回來計算同一拍 e[n]。</p>
+    <p><strong>A．讀回授、算比例。</strong> 在此基準設定中，y 是該拍開始時的回授；先計算誤差 e=r−y，再得到 Up。新的 u 要到接下來的保持區間才影響被控體，不能把 y[n+1] 拿回來計算同一拍 e[n]。</p>
     ${codeBlock('Include/PID_Control_Module.h', 149, 149, String.raw`    p->Err = p->Ref - p->Fdb;`, 'A1｜圖中的 e：參考減去本拍回授')}
     ${codeBlock('Include/PID_Control_Module.h', 153, 153, String.raw`    p->Up = p->Kp * p->Err;`, 'A2｜圖中的 P：Up = Kp × e')}
     <p><strong>B．先檢查舊輸出，再更新 Ui。</strong> 此時 Out 與 OutPreSat 尚未被本拍覆寫。因此游標若顯示「積分凍結」，應核對的是上一拍的兩個值。即使本拍誤差反向，凍結依然生效；第一次跨入飽和的當拍卻可能已經累積。</p>

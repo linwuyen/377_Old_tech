@@ -1,12 +1,12 @@
+import { BASE_DEFAULTS, createLoopModel } from './loop-model.js';
+
 /**
  * Normalized closed-loop teaching model; NOT an identified ASR5000 power stage.
  * Controller operation order follows runPI at PID_Control_Module.h L140–184.
  * Ki is the firmware's dimensionless, per-call T/Ti coefficient. Changing ts
  * deliberately does not rescale Ki. JavaScript Number is not target float32.
  */
-export const DEFAULTS = Object.freeze({
-  kp: 1.2, ki: 0.04, ts: 0.01, load: 0.25, limit: 1, mode: 'firmware',
-});
+export const DEFAULTS = BASE_DEFAULTS;
 
 export const PRESETS = Object.freeze([
   { id: 'calm', label: '平順追蹤', description: '觀察基準階躍與可補償的負載擾動。', options: { ...DEFAULTS } },
@@ -14,6 +14,8 @@ export const PRESETS = Object.freeze([
   { id: 'overload', label: '負載超出能力', description: '負載期間所需輸出大於上限；比較卸載後的飽和恢復。', options: { ...DEFAULTS, kp: 1.2, ki: 0.12, load: 0.9 } },
   { id: 'slow', label: '放慢取樣', description: '保持 Kp、Ki，將週期拉長；同時改變等效積分強度與取樣延遲。', options: { ...DEFAULTS, ts: 0.1 } },
   { id: 'unstable', label: '線性失穩', description: '較慢取樣搭配較大增益，觀察極點越過單位圓；限幅波形有界不等於線性穩定。', options: { ...DEFAULTS, kp: 6, ki: 0.4, ts: 0.1 } },
+  { id: 'delay', label: '延遲 8 拍', description: '保持平順追蹤的增益，只延後致動命令 8 拍，觀察相位與階躍時序。', options: { ...DEFAULTS, delaySamples: 8 } },
+  { id: 'filtered', label: '量測低通 1 Hz', description: '保持平順追蹤的增益，只啟用 1 Hz 量測低通，比較真實輸出與控制器看見的回授。', options: { ...DEFAULTS, filterEnabled: true, cutoffHz: 1 } },
 ]);
 
 const TARGET = 0.6;
@@ -70,17 +72,14 @@ function summarize(points, events, options) {
 }
 
 /**
- * At sample n: measure y[n] -> compute e/P/I and clamp u[n] -> hold u,d for
- * dt -> obtain y[n+1]. The final sample has dt=0: no phantom plant interval.
+ * At sample n: measure y[n] -> optional current-input low-pass -> e/P/I and
+ * clamp command u[n] -> delay u by D samples -> hold appliedOut,d for dt ->
+ * obtain y[n+1]. The final sample has dt=0: no phantom plant interval.
  * A non-divisor ts ends at the last complete sample <=8 s; events.end records it.
  */
 export function simulateClosedLoop(input = {}) {
-  const { kp, ki, ts, load, limit, mode } = { ...DEFAULTS, ...input };
-  if (![kp, ki, ts, load, limit].every(Number.isFinite)
-      || kp < 0 || ki < 0 || load < 0 || limit <= 0 || ts <= 0 || ts > 0.1) {
-    throw new RangeError('Use finite nonnegative Kp, Ki and load, positive limit, and 0 < ts <= 0.1 s.');
-  }
-  if (!['firmware', 'unconditional'].includes(mode)) throw new RangeError('Unknown integral update mode.');
+  const model = createLoopModel(input);
+  const { kp, ki, ts, load, limit, mode, delaySamples, filterEnabled, cutoffHz, a, b, filter } = model;
   const lastIndex = Math.floor(DURATION / ts + 1e-10);
   if (lastIndex + 1 > 10000) throw new RangeError('Simulation must contain at most 10000 samples.');
   const indexAt = time => Math.ceil(time / ts - 1e-10);
@@ -91,9 +90,10 @@ export function simulateClosedLoop(input = {}) {
     events[name] = timeAt(events[`${name}Index`]);
   }
   events.end = timeAt(lastIndex);
-  const options = { kp, ki, ts, load, limit, mode, target: TARGET, tau: TAU, duration: DURATION };
-  const a = Math.exp(-ts / TAU);
+  const options = { kp, ki, ts, load, limit, mode, delaySamples, filterEnabled, cutoffHz, filter, target: TARGET, tau: TAU, duration: DURATION };
   let y = 0;
+  let previousY = 0;
+  let previousFeedback = 0;
   let ui = 0;
   let previousOut = 0;
   let previousPre = 0;
@@ -101,20 +101,24 @@ export function simulateClosedLoop(input = {}) {
   for (let n = 0; n <= lastIndex; n += 1) {
     const reference = n < events.stepIndex ? 0 : TARGET;
     const disturbance = n >= events.loadOnIndex && n < events.loadOffIndex ? load : 0;
-    const error = reference - y;
+    const feedback = filterEnabled ? filter.p * previousFeedback + filter.c * (y + previousY) : y;
+    const error = reference - feedback;
     const up = kp * error;
     // This comparison precedes the current pre-saturation calculation in runPI.
     const frozen = mode === 'firmware' && previousOut !== previousPre;
     if (!frozen) ui += ki * up;
     const pre = up + ui;
     const out = Math.max(-limit, Math.min(limit, pre));
-    if (![y, error, up, ui, pre, out].every(Number.isFinite)) throw new RangeError('Parameters overflow the numerical model.');
+    const appliedOut = delaySamples === 0 ? out : n >= delaySamples ? points[n - delaySamples].out : 0;
+    if (![y, feedback, error, up, ui, pre, out, appliedOut].every(Number.isFinite)) throw new RangeError('Parameters overflow the numerical model.');
     points.push({
-      n, t: timeAt(n), reference, y, error, up, ui, pre, out, frozen,
+      n, t: timeAt(n), reference, y, feedback, error, up, ui, pre, out, appliedOut, frozen,
       saturated: out !== pre, load: disturbance, previousOut, previousPre,
       dt: n < lastIndex ? ts : 0,
     });
-    if (n < lastIndex) y = a * y + (1 - a) * (out - disturbance);
+    previousY = y;
+    previousFeedback = feedback;
+    if (n < lastIndex) y = a * y + b * (appliedOut - disturbance);
     previousOut = out;
     previousPre = pre;
   }

@@ -7,8 +7,9 @@ export function renderFrequencyGuide() {
   const id = `frequency-guide-${++guideCount}`;
   return `
   <section class="lab-frequency-theory" aria-labelledby="${id}-heading">
+    <p class="cl-baseline-note">06–10 節的傳遞函數、二階特徵式與 Jury 界線只適用 D=0、量測低通旁路。啟用擴充時，開迴路應包含 z⁻ᴰ 與 F，實體閉迴路改為 Hy=A/(1+AF)，詳見 11–15 節。</p>
     <h2 id="${id}-heading">06｜從逐拍遞迴，走到離散 Bode 圖</h2>
-    <p>頻域圖使用與時間模擬相同的 Kp、Ki、Ts 與 τ=0.25 s，但取<strong>未限幅、每拍都允許積分</strong>的線性模型。分析的是工作點附近的小擾動；負載與限幅值不改變這個線性傳遞函數。若工作點本來就需要超出限幅的輸出，例如 0.6+d&gt;Umax，便不能把此圖解讀成該過載工作點的局部響應。</p>
+    <p>此基準推導使用與時間模擬相同的 Kp、Ki、Ts 與 τ=0.25 s，但取<strong>未限幅、每拍都允許積分</strong>的線性模型。分析的是工作點附近的小擾動；負載與限幅值不改變這個線性傳遞函數。若工作點本來就需要超出限幅的輸出，例如 0.6+d&gt;Umax，便不能把此圖解讀成該過載工作點的局部響應。</p>
     <p>由零初始條件下的 <code>Ui[n]=Ui[n−1]+Ki·Kp·e[n]</code> 與被控體更新式，可寫出開迴路 L，以及參考到回授的閉迴路 H。這裡的 Ki 仍是原碼的每拍係數；它先乘比例項 Up，再加進 Ui。${src('Include/PID_Control_Module.h', 153, 166)}</p>
     ${math(String.raw`\begin{gathered}a=e^{-T_s/\tau},\quad b=1-a,\quad G_p(z)=\frac{b}{z-a},\quad G_c(z)=K_p\frac{(1+K_i)z-1}{z-1},\\L(z)=G_c(z)G_p(z),\qquad H(z)=\frac{L(z)}{1+L(z)}\end{gathered}`)}
     <p>離散頻率響應沿 z 平面的單位圓計算；橫軸採 Hz，不能直接把 f 代進連續模型的 s。正頻率只畫到 Nyquist，對數軸不包含 f=0，直流增益另外用極限求出。</p>
@@ -17,8 +18,8 @@ export function renderFrequencyGuide() {
     <p>幅值圖同時看 L 與 H：L 用來找迴路交越與相位裕度，H 用來看追蹤頻寬及共振峰。相位以連續分支解讀，不把 ±180° 顯示折返誤認成實際突變。若閉迴路失穩，代入單位圓仍可能算出代數上的 H；它不代表可達的穩態正弦響應。</p>
 
     <h2 id="${id}-margins">07｜交越頻率、相位裕度與頻寬，各回答不同問題</h2>
-    <p><strong>增益交越頻率 fc</strong> 是開迴路幅值通過 0 dB 的位置；相位裕度 PM 是在這個位置，距離 −180° 還有多少相位。讀值必須來自同一個交越點，不能拿閉迴路的頻寬頻率代替。這符合 <a href="https://www.mathworks.com/help/control/ref/dynamicsystem.margin.html" target="_blank" rel="noopener noreferrer">MathWorks margin 的相位裕度定義 ↗</a>。</p>
-    ${math(String.raw`|L(e^{j2\pi f_cT_s})|=1,\qquad \mathrm{PM}=180^\circ+\phi_L(f_c)`)}
+    <p><strong>增益交越頻率 fgc</strong> 是開迴路幅值通過 0 dB 的位置；相位裕度 PM 是在這個位置，距離 −180° 還有多少相位。讀值必須來自同一個交越點，不能拿閉迴路的頻寬頻率代替。這符合 <a href="https://www.mathworks.com/help/control/ref/dynamicsystem.margin.html" target="_blank" rel="noopener noreferrer">MathWorks margin 的相位裕度定義 ↗</a>。</p>
+    ${math(String.raw`|L(e^{j2\pi f_{\mathrm{gc}}T_s})|=1,\qquad \mathrm{PM}=180^\circ+\phi_L(f_{\mathrm{gc}})`)}
     <p>沒有交越點，應先分清「整段低於 0 dB」與「到 Nyquist 仍高於 0 dB」，不能一律說成相位裕度無限大。直流邊界與 Nyquist 邊界也須單獨辨認。此實驗的正增益一階 PI 模型有其特定結構；穩定性仍以閉迴路極點判定，不把單一 PM 數字當成任意系統的完整穩定證明。</p>
     <p><strong>閉迴路頻寬 fBW</strong> 採相對直流增益的首次向下半功率交越：|H| 降至 |H(1)|/√2。一般工具常稱相對直流 −3 dB 頻寬；本實驗使用精確半功率值，約 −3.0103 dB，和 −3.0000 dB 有微小差別。可參照 <a href="https://www.mathworks.com/help/ident/ref/dynamicsystem.bandwidth.html" target="_blank" rel="noopener noreferrer">MathWorks bandwidth 的相對直流、首次下降定義 ↗</a>。</p>
     ${math(String.raw`|H(e^{j2\pi f_{\mathrm{BW}}T_s})|=\frac{|H(1)|}{\sqrt2},\qquad 20\log_{10}\!\frac{|H|}{|H(1)|}=-3.0103\ldots\ \mathrm{dB}`)}
@@ -34,7 +35,7 @@ export function renderFrequencyGuide() {
     ${math(String.raw`\begin{aligned}1+c_1+c_0&=bK_pK_i,\\1-c_1+c_0&=2(1+a)-bK_p(2+K_i),\\1-c_0&=b(1+K_p).\end{aligned}`)}
     <p>在 Kp&gt;0、Ki&gt;0、Ts&gt;0 下，0&lt;a&lt;1，第一與第三式自動成立，因此穩定範圍只剩下第二式。達到等號時有根穿過 z=−1，對應取樣正負交替的 Nyquist 模態；Ki=0 或 Kp=0 的消去情形則需另外處理。</p>
     ${math(String.raw`0<K_p<\frac{2(1+a)}{(1-a)(2+K_i)}\qquad(K_i>0)`)}
-    <p>例如 Ts=0.1 s、Ki=0.4 時，臨界 Kp≈4.2221。選「線性失穩」的 Kp=6，兩根約為 0.7192 與 −1.8182；負根已在單位圓外。時間模擬中的輸出仍會被 ±Umax 截住，可能呈現有界振盪；這不等於未限幅線性迴路穩定。</p>
+    <p>在 D=0、低通旁路時，例如 Ts=0.1 s、Ki=0.4，臨界 Kp≈4.2221。選「線性失穩」的 Kp=6，基準模型兩根約為 0.7192 與 −1.8182；負根已在單位圓外。時間模擬中的輸出仍會被 ±Umax 截住，可能呈現有界振盪；這不等於未限幅線性迴路穩定。</p>
 
     <h2 id="${id}-time">09｜把極點位置，對回階躍響應</h2>
     <p>正實根通常帶來同方向衰減；負實根的模態逐拍換號；共軛複數根帶來衰減振盪。根越接近單位圓，模態每拍衰減越慢。對 0&lt;|z|&lt;1 的穩定模態，可換算其包絡時間常數與振盪頻率：</p>

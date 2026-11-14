@@ -7,13 +7,15 @@ import { sourceExcerpts, equations } from '../lessons/shared.js';
 import { diagramInfo, diagramSVG } from '../lessons/diagrams.js';
 import { renderLabGuide } from '../lab-guide.js';
 import { renderFrequencyGuide } from '../frequency-guide.js';
+import { renderDelayGuide } from '../delay-guide.js';
 const root=new URL('../',import.meta.url);
 const lessons=[...systemLessons,...controlLessons];
 assert.equal(lessons.length,8,'Eight complete lessons are required');
 assert.equal(new Set(lessons.map(l=>l.id)).size,8,'Lesson IDs must be unique');
 assert.deepEqual(lessons.map(l=>Number(l.number)).sort((a,b)=>a-b),[1,2,3,4,5,6,7,8]);
 const validIds=new Set([...lessons.map(l=>l.id),'','lab','sources']);
-const labGuide = renderLabGuide() + renderFrequencyGuide();
+const delayGuide = renderDelayGuide();
+const labGuide = renderLabGuide() + renderFrequencyGuide() + delayGuide;
 let citations=0;
 for(const lesson of [...lessons, {id:'lab',number:'LAB',title:'PI closed loop',summary:'Lab model and source',duration:'Interactive',category:'Lab',body:labGuide}]){
   for(const key of ['id','number','title','summary','duration','category','body'])assert.ok(lesson[key],`${lesson.id} requires ${key}`);
@@ -31,7 +33,7 @@ for(const lesson of [...lessons, {id:'lab',number:'LAB',title:'PI closed loop',s
     }
   }
 }
-for(const file of ['index.html','styles.css','deep-content.css','lab.css','frequency.css','app.js','lab.js','lab-guide.js','simulation.js','frequency.js','frequency-view.js','frequency-guide.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
+for(const file of ['index.html','styles.css','deep-content.css','lab.css','frequency.css','app.js','lab.js','lab-guide.js','delay-guide.js','loop-model.js','simulation.js','polynomial.js','frequency.js','frequency-view.js','frequency-guide.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
 const html=await readFile(new URL('index.html',root),'utf8');
 assert.ok(html.includes('lang="zh-Hant"'));
 for(const [,file] of html.matchAll(/(?:href|src)="\.\/([^"#]+)"/g))await access(new URL(file,root));
@@ -51,4 +53,5 @@ for(const name of Object.keys(diagramInfo)){
 const fontCSS=await readFile(new URL('vendor/katex/katex.min.css',root),'utf8');
 for(const [,path]of fontCSS.matchAll(/url\(([^)]+)\)/g))await access(new URL(`vendor/katex/${path.replace(/["']/g,'')}`,root));
 assert.ok(labGuide.includes('<title')&&labGuide.includes('<desc'),'Lab diagram needs text alternatives');
-console.log(`Verified ${lessons.length} lessons + closed-loop guide, ${citations} citations, ${equations.length} strict-rendered formulas, ${Object.keys(diagramInfo).length + 1} diagrams, ${sourceExcerpts.length} line-numbered excerpts and local fonts/assets.${process.argv[2]?' All source paths/ranges and displayed code match the original.':''}`);
+assert.ok(delayGuide.includes('<title')&&delayGuide.includes('<desc'),'Delay diagram needs text alternatives');
+console.log(`Verified ${lessons.length} lessons + closed-loop guides, ${citations} citations, ${equations.length} strict-rendered formulas, ${Object.keys(diagramInfo).length + 2} diagrams, ${sourceExcerpts.length} line-numbered excerpts and local fonts/assets.${process.argv[2]?' All source paths/ranges and displayed code match the original.':''}`);

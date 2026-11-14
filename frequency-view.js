@@ -5,11 +5,11 @@ const fmt = (value, digits = 3) => {
   if (value === 0) return '0';
   return Math.abs(value) < 0.001 || Math.abs(value) >= 10000 ? value.toExponential(2) : Number(value.toFixed(digits)).toString();
 };
-const stateText = { stable: '穩定', marginal: '單位圓邊界', unstable: '不穩定' };
+const stateText = { stable: '穩定', marginal: '單位圓邊界', unstable: '不穩定', indeterminate: '數值判定未確認' };
 const metricText = {
   'zero-loop': '零迴路增益', 'below-unity': '全頻帶低於 0 dB',
   'above-unity-to-nyquist': '至 Nyquist 仍高於 0 dB', 'not-before-nyquist': 'Nyquist 內未降至門檻',
-  unstable: '不穩定，不定義', marginal: '邊界狀態，不定義'
+  unstable: '不穩定，不定義', marginal: '邊界狀態，不定義', indeterminate: '數值判定未確認'
 };
 const metricValue = (metric, unit) => metric.value === null ? metricText[metric.status] || '未定義' : `${fmt(metric.value)} ${unit}`;
 const path = (rows, key, x, y, xKey = 'f') => {
@@ -27,10 +27,10 @@ export function renderFrequencyPanel(container) {
   const id = `frequency-${++count}`;
   container.innerHTML = `<section class="frequency-panel" aria-labelledby="${id}-heading">
     <div class="fq-heading"><div><span class="cl-badge">FREQUENCY / z-PLANE</span><h2 id="${id}-heading">同一組參數，換個角度觀察。</h2></div><button type="button" class="cl-text-button" data-return-controls>回到參數 ↑</button></div>
-    <p class="fq-scope">以下採用未限幅、每拍積分的線性模型。負載、限幅與凍結方式影響時域模擬；頻域圖只隨 Kp、Ki、Ts 改變。</p>
+    <p class="fq-scope">採未限幅、每拍積分模型，與時域共用 Kp、Ki、Ts、延遲 D 及量測低通 F。A = Gc·z⁻ᴰ·Gp，開迴路 L = A·F；實體與量測輸出分開計算。</p>
     <div class="cl-metrics fq-metrics" data-frequency-metrics></div>
     <p class="fq-verdict" data-frequency-verdict role="status"></p>
-    <div class="fq-legend"><span class="fq-loop-key">開迴路 L = GcGp</span><span class="fq-closed-key">閉迴路 H = L/(1+L)</span><span class="fq-marker-key">交越 / 半功率門檻</span></div>
+    <div class="fq-legend"><span class="fq-loop-key">開迴路 L = AF</span><span class="fq-closed-key">實體 Hy = A/(1+L)</span><span class="fq-measured-key" data-measured-legend>量測 Hm = L/(1+L)</span><span class="fq-marker-key">交越 / 半功率門檻</span></div>
     <figure class="cl-figure"><div class="fq-bode-scroll" tabindex="0" aria-label="Bode 圖，可水平捲動"><svg data-bode viewBox="0 0 900 510" role="img" aria-labelledby="${id}-bode-title ${id}-bode-desc"></svg></div><figcaption data-bode-caption></figcaption></figure>
     <div class="fq-cursor"><label for="${id}-cursor">頻率游標 <output data-frequency-label for="${id}-cursor"></output></label><input id="${id}-cursor" type="range" min="0" max="600" step="1" value="300" data-frequency-cursor><div class="cl-jumps"><button type="button" data-frequency-jump="gainCrossover">跳至增益交越</button><button type="button" data-frequency-jump="bandwidth">跳至閉迴路頻寬</button></div><p data-frequency-readout aria-live="polite"></p></div>
     <div class="fq-paired">
@@ -38,6 +38,8 @@ export function renderFrequencyPanel(container) {
       <figure class="cl-figure"><h3>對照加載前的階躍</h3><svg data-linear-step viewBox="0 0 420 335" role="img" aria-labelledby="${id}-step-title ${id}-step-desc"></svg><figcaption data-linear-caption></figcaption></figure>
     </div>
     <div class="fq-pole-details" data-pole-details></div>
+    <p class="fq-solver-note" data-solver-note></p>
+    <button type="button" class="cl-text-button" data-delay-theory>延遲、低通與原碼對照 ↓</button>
     <button type="button" class="cl-text-button" data-frequency-theory>推導 L、H、頻寬與 Jury 穩定條件 ↓</button>
   </section>`;
   const find = selector => container.querySelector(selector);
@@ -50,10 +52,11 @@ export function renderFrequencyPanel(container) {
     const { points, fMin, fMax, nyquist, metrics } = analysis;
     const selected = points[+cursor.value];
     const x = f => 68 + Math.log(f / fMin) / Math.log(fMax / fMin) * 800;
-    const values = points.flatMap(p => [p.openDb, p.closedDb]).filter(Number.isFinite);
+    const measuredEnabled = analysis.options.filterEnabled;
+    const values = points.flatMap(p => [p.openDb, p.closedDb, ...(measuredEnabled ? [p.measuredDb] : [])]).filter(Number.isFinite);
     const dbMin = Math.floor(Math.min(-20, ...values) / 10) * 10;
     const dbMax = Math.ceil(Math.max(10, ...values) / 10) * 10;
-    const phases = points.flatMap(p => [p.openPhase, p.closedPhase]).filter(Number.isFinite);
+    const phases = points.flatMap(p => [p.openPhase, p.closedPhase, ...(measuredEnabled ? [p.measuredPhase] : [])]).filter(Number.isFinite);
     const phaseMin = Math.floor(Math.min(-180, ...phases) / 45) * 45;
     const phaseMax = Math.ceil(Math.max(0, ...phases) / 45) * 45;
     const dbY = value => 208 - (value - dbMin) / (dbMax - dbMin) * 161;
@@ -71,7 +74,7 @@ export function renderFrequencyPanel(container) {
     const marker = (f, css) => inRange(f) ? `<line x1="${x(f)}" x2="${x(f)}" y1="47" y2="437" class="fq-event ${css}"/>` : '';
     const dcThreshold = metrics.dcGain > 0 ? 20 * Math.log10(metrics.dcGain) - 10 * Math.log10(2) : null;
     const phaseAtCrossover = metrics.phaseMargin.value === null ? null : metrics.phaseMargin.value - 180;
-    bode.innerHTML = `<title id="${id}-bode-title">離散開迴路與閉迴路 Bode 圖</title><desc id="${id}-bode-desc">橫軸為對數頻率 Hz，最高到 Nyquist ${fmt(nyquist)} Hz。上圖幅值 dB，下圖相位度。綠色為 L，橙色為 H。相位裕度 ${metricValue(metrics.phaseMargin, '度')}；半功率頻寬 ${metricValue(metrics.bandwidth, 'Hz')}。</desc>
+    bode.innerHTML = `<title id="${id}-bode-title">含控制延遲與量測低通的離散 Bode 圖</title><desc id="${id}-bode-desc">橫軸對數頻率 Hz，最高 Nyquist ${fmt(nyquist)} Hz。上圖幅值，下圖連續相位。綠色為 L，橙色為實體 Hy，啟用低通時藍色為量測 Hm。相位裕度 ${metricValue(metrics.phaseMargin, '度')}；實體輸出半功率頻寬 ${metricValue(metrics.bandwidth, 'Hz')}。</desc>
       <text x="68" y="24" class="fq-panel-title">幅值（dB）</text><text x="68" y="260" class="fq-panel-title">相位（°）</text>
       ${grid(dbMin, dbMax, dbY, 47, 208)}${grid(phaseMin, phaseMax, phaseY, 281, 437)}
       <line x1="68" x2="868" y1="${dbY(0)}" y2="${dbY(0)}" class="fq-reference"/><line x1="68" x2="868" y1="${phaseY(-180)}" y2="${phaseY(-180)}" class="fq-reference"/>
@@ -79,17 +82,19 @@ export function renderFrequencyPanel(container) {
       ${marker(crossover, 'fq-crossover')}${marker(bandwidth, 'fq-bandwidth')}
       <path d="${path(points, 'openDb', x, dbY)}" class="cl-trace fq-loop"/><path d="${path(points, 'closedDb', x, dbY)}" class="cl-trace fq-closed"/>
       <path d="${path(points, 'openPhase', x, phaseY)}" class="cl-trace fq-loop"/><path d="${path(points, 'closedPhase', x, phaseY)}" class="cl-trace fq-closed"/>
+      ${measuredEnabled ? `<path d="${path(points, 'measuredDb', x, dbY)}" class="cl-trace fq-measured"/><path d="${path(points, 'measuredPhase', x, phaseY)}" class="cl-trace fq-measured"/>` : ''}
       ${inRange(crossover) && phaseAtCrossover !== null ? `<line x1="${x(crossover)}" x2="${x(crossover)}" y1="${phaseY(-180)}" y2="${phaseY(phaseAtCrossover)}" class="fq-margin"/><circle cx="${x(crossover)}" cy="${dbY(0)}" r="4" class="cl-selected-dot"/>` : ''}
       ${inRange(bandwidth) && dcThreshold !== null ? `<circle cx="${x(bandwidth)}" cy="${dbY(dcThreshold)}" r="4" class="fq-bandwidth-dot"/>` : ''}
       <line x1="${x(selected.f)}" x2="${x(selected.f)}" y1="47" y2="437" class="cl-selected"/>
       <text x="868" y="492" text-anchor="end">頻率 f（Hz，對數軸）· fN = ${fmt(nyquist)} Hz</text>`;
     find('[data-frequency-label]').value = `${fmt(selected.f)} Hz`;
-    find('[data-frequency-readout]').textContent = `L：${selected.openDb === null ? '−∞ dB（零增益）' : fmt(selected.openDb, 2) + ' dB'} / ${fmt(selected.openPhase, 2)}°；H：${selected.closedDb === null ? '幅值未定義或為零' : fmt(selected.closedDb, 2) + ' dB'} / ${fmt(selected.closedPhase, 2)}°。`;
+    const polarText = (db, phase) => `${db === null ? '零幅值或未定義' : fmt(db, 2) + ' dB'} / ${phase === null ? '相位未定義' : fmt(phase, 2) + '°'}`;
+    find('[data-frequency-readout]').textContent = `L：${polarText(selected.openDb, selected.openPhase)}；Hy：${polarText(selected.closedDb, selected.closedPhase)}。${measuredEnabled ? `Hm：${polarText(selected.measuredDb, selected.measuredPhase)}；量測 F：${polarText(selected.filterDb, selected.filterPhase)}。` : ''}`;
   }
 
   function drawPoles() {
     const { poles, hiddenPoles, stability } = analysis;
-    const bound = Math.max(1.25, Math.ceil(Math.max(...poles.map(p => Math.max(Math.abs(p.re), Math.abs(p.im)))) * 1.15 * 4) / 4);
+    const bound = Math.max(1.25, Math.ceil(Math.max(0, ...poles.map(p => Math.max(Math.abs(p.re), Math.abs(p.im)))) * 1.15 * 4) / 4);
     const scale = 125 / bound, x = re => 180 + re * scale, y = im => 160 - im * scale;
     find('[data-poles]').innerHTML = `<title id="${id}-pole-title">閉迴路極點與單位圓</title><desc id="${id}-pole-desc">${stateText[stability.status]}。動態極點最大半徑 ${fmt(stability.maxRadius, 6)}。單位圓內為衰減模態，圓外為成長模態。</desc>
       <circle cx="180" cy="160" r="${scale}" class="fq-unit-circle"/>
@@ -116,22 +121,25 @@ export function renderFrequencyPanel(container) {
       <text x="48" y="22">y / 0.6</text><line x1="48" x2="398" y1="${y(1)}" y2="${y(1)}" class="fq-reference"/>
       <path d="${path(linear.points, 'y', x, y, 't')}" class="cl-trace fq-closed"/><path d="${path(actual, 'y', x, y, 't')}" class="cl-trace fq-loop"/>
       <text x="398" y="318" text-anchor="end">階躍後經過時間（s）</text>`;
-    find('[data-linear-caption]').textContent = `橙：無限幅線性；綠：現有${options.mode === 'firmware' ? '原碼凍結' : '無條件積分'}限幅模擬。皆為零初始狀態、相同 Ts。${linear.truncated ? `線性響應在 ${fmt(linear.stopTime)} s 超出 ±4 倍目標，後續不繪製；並非收斂或被限幅。` : '無飽和時兩條線應重合。'}`;
+    find('[data-linear-caption]').textContent = `橙：無限幅線性；綠：現有${options.mode === 'firmware' ? '原碼凍結' : '無條件積分'}限幅模擬。皆畫實體 y，零初始狀態、相同 Ts／D／低通設定。${linear.truncated ? `線性響應在 ${fmt(linear.stopTime)} s 超出 ±4 倍目標，後續不繪製；並非收斂或被限幅。` : '無飽和時兩條線應重合。'}`;
   }
 
   function update(options, timeResult) {
     analysis = analyzeFrequency(options);
+    find('[data-measured-legend]').hidden = !options.filterEnabled;
     const { metrics, stability, points } = analysis;
+    const solver = analysis.solver;
+    find('[data-solver-note]').textContent = solver ? `特徵式階數 ${solver.degree}；${solver.converged ? '數值根已通過殘差與係數重建檢查' : '數值根未通過精度檢查'}。歸一化殘差 ${fmt(solver.residual)}，係數誤差 ${fmt(solver.coefficientError)}。` : '';
     cursor.max = points.length - 1;
     const desired = lastFrequency ?? metrics.gainCrossover.value ?? 1;
     cursor.value = points.reduce((best, p, index) => Math.abs(Math.log(p.f / Math.max(desired, analysis.fMin))) < Math.abs(Math.log(points[best].f / Math.max(desired, analysis.fMin))) ? index : best, 0);
     lastFrequency = points[+cursor.value].f;
     const card = (label, value, hint) => `<div><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`;
-    find('[data-frequency-metrics]').innerHTML = card('閉迴路半功率頻寬', metricValue(metrics.bandwidth, 'Hz'), '相對直流增益 −3.01 dB') + card('相位裕度 PM', metricValue(metrics.phaseMargin, '°'), metrics.phaseMargin.status === 'dc-boundary' ? 'DC 邊界值，無正頻率交越' : metrics.phaseMargin.status === 'nyquist-boundary' ? 'Nyquist 邊界交越' : '開迴路 |L| = 1 處') + card('增益交越頻率 fgc', metricValue(metrics.gainCrossover, 'Hz'), '不等於閉迴路頻寬') + card('線性動態極點', stateText[stability.status], `最大半徑 ${fmt(stability.maxRadius, 6)}`);
+    find('[data-frequency-metrics]').innerHTML = card('實體閉迴路半功率頻寬', metricValue(metrics.bandwidth, 'Hz'), '相對直流增益 −3.01 dB') + card('相位裕度 PM', metricValue(metrics.phaseMargin, '°'), metrics.phaseMargin.status === 'dc-boundary' ? 'DC 邊界值，無正頻率交越' : metrics.phaseMargin.status === 'nyquist-boundary' ? 'Nyquist 邊界交越' : '180° + 連續相位（未折返）') + card('增益交越頻率 fgc', metricValue(metrics.gainCrossover, 'Hz'), '不等於閉迴路頻寬') + card('線性動態極點', stateText[stability.status], `最大半徑 ${fmt(stability.maxRadius, 6)}`);
     const verdict = find('[data-frequency-verdict]');
     verdict.dataset.stability = stability.status;
-    verdict.textContent = options.kp === 0 ? 'Kp = 0：參考到輸出的傳遞函數為零，沒有追蹤頻寬或相位裕度。被控體自然極點仍可衰減；保留積分狀態為中性。' : stability.status === 'unstable' ? '有極點落在單位圓外：未限幅線性響應成長。限幅後的時域波形即使有界，也不能證明此線性迴路穩定。' : stability.status === 'marginal' ? '極點位於單位圓邊界附近：不宣稱漸近穩定，不提供通常的閉迴路頻寬。' : timeResult.metrics.saturationDuration > 0 ? '線性動態極點在單位圓內，但本次時域模擬曾限幅。請比較下方階躍差異；相位裕度不預測積分凍結或過載恢復。' : '線性動態極點在單位圓內。本次模擬未限幅，可直接比較頻域、極點與階躍形狀。';
-    find('[data-bode-caption]').textContent = `開迴路交越以綠色虛線標示；閉迴路半功率點以橙色虛線標示。相位圖粗線為 PM 的角度差。Nyquist = ${fmt(analysis.nyquist)} Hz；不延伸到取樣頻帶之外。${stability.status !== 'stable' ? '不穩定或邊界 H 的曲線僅為代數單位圓評估，不能視為可達的穩態正弦響應。' : ''}${options.kp === 0 ? '零幅值的 dB 為 −∞，相位未定義，故不繪製曲線。' : ''}`;
+    verdict.textContent = stability.status === 'indeterminate' ? '數值求根尚未通過精度檢查，不宣稱穩定或報告頻寬；請調整參數後重新評估。' : options.kp === 0 ? 'Kp = 0：參考到輸出的傳遞函數為零，沒有追蹤頻寬或相位裕度。被控體自然極點仍可衰減；保留積分狀態為中性。' : stability.status === 'unstable' ? '有極點落在單位圓外：未限幅線性響應成長。限幅後的時域波形即使有界，也不能證明此線性迴路穩定。' : stability.status === 'marginal' ? '極點位於單位圓邊界附近：不宣稱漸近穩定，不提供通常的閉迴路頻寬。' : timeResult.metrics.saturationDuration > 0 ? '線性動態極點在單位圓內，但本次時域模擬曾限幅。請比較下方階躍差異；相位裕度不預測積分凍結或過載恢復。' : '線性動態極點在單位圓內。本次模擬未限幅，可直接比較頻域、極點與階躍形狀。';
+    find('[data-bode-caption]').textContent = `開迴路交越以綠色虛線標示；實體輸出 Hy 的半功率點以橙色虛線標示。相位圖粗線為 PM 的角度差；延遲相位不折返，多圈相位時 PM 可小於 −180°，不能只依 PM 正負判斷高階穩定性。Nyquist = ${fmt(analysis.nyquist)} Hz；不延伸到取樣頻帶之外。${stability.status !== 'stable' ? '不穩定或邊界 H 的曲線僅為代數單位圓評估，不能視為可達的穩態正弦響應。' : ''}${options.kp === 0 ? '零幅值的 dB 為 −∞，相位未定義，故不繪製曲線。' : ''}`;
     for (const key of ['gainCrossover', 'bandwidth']) {
       const value = metrics[key].value;
       find(`[data-frequency-jump="${key}"]`).disabled = value === null || value < analysis.fMin || value > analysis.fMax;
