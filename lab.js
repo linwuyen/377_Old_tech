@@ -1,5 +1,7 @@
 import { DEFAULTS, PRESETS, simulateClosedLoop } from './simulation.js';
 import { renderLabGuide } from './lab-guide.js';
+import { renderFrequencyPanel } from './frequency-view.js';
+import { renderFrequencyGuide } from './frequency-guide.js';
 
 /**
  * A numerical lesson, not a plant or hardware simulation.
@@ -45,7 +47,7 @@ export function renderLab(container) {
   if (!container?.querySelector) throw new TypeError('renderLab needs a DOM container.');
   const id = `closed-loop-${++labCount}`;
   const specs = [
-    ['kp', '比例增益 Kp', 0, 4, 0.05, 'Up = Kp × e'],
+    ['kp', '比例增益 Kp', 0, 8, 0.05, 'Up = Kp × e；較大增益可觀察極點越界'],
     ['ki', '每拍積分係數 Ki', 0, 0.4, 0.005, 'Ui 每拍增加 Ki × Up'],
     ['ts', '控制取樣週期 Ts（s）', 0.005, 0.1, 0.005, '控制器呼叫間隔；改變 Ts 時保持 Ki'],
     ['load', '負載擾動 d', 0, 1.2, 0.05, '3 s 加載、5 s 卸載；無量綱'],
@@ -57,7 +59,7 @@ export function renderLab(container) {
     <input type="range" id="${id}-${key}" data-param="${key}" aria-describedby="${id}-${key}-hint" min="${min}" max="${max}" step="${step}" value="${DEFAULTS[key]}">
     <small id="${id}-${key}-hint">${hint}</small></div>`).join('');
   container.innerHTML = `<div class="closed-loop-lab">
-    <div class="cl-intro"><span class="cl-badge">CLOSED LOOP / 一階教學模型</span><button type="button" class="cl-text-button" data-guide>模型、公式與原碼 ↓</button></div>
+    <div class="cl-intro"><span class="cl-badge">CLOSED LOOP / 一階教學模型</span><div class="cl-nav-links"><button type="button" class="cl-text-button" data-frequency-nav>Bode / 極點 ↓</button><button type="button" class="cl-text-button" data-guide>模型、公式與原碼 ↓</button></div></div>
     <div class="cl-presets" role="group" aria-label="實驗情境">${PRESETS.map(p => `<button type="button" data-preset="${p.id}" aria-pressed="false" title="${p.description}">${p.label}</button>`).join('')}</div>
     <p class="cl-preset-note" data-preset-note>每次調整即從零初始狀態重算完整實驗。</p>
     <div class="cl-workbench">
@@ -68,6 +70,7 @@ export function renderLab(container) {
         <p class="cl-equivalent" data-equivalent></p>
         <label class="cl-checkbox"><input type="checkbox" data-compare checked>疊加另一種積分方式的對照曲線</label>
         <button type="button" class="btn secondary cl-reset" data-reset>還原預設參數</button>
+        <button type="button" class="cl-controls-jump" data-frequency-nav>觀察 Bode 圖與極點 ↓</button>
       </section>
       <section class="cl-results" aria-label="模擬結果">
         <div class="cl-metrics" data-metrics></div>
@@ -79,10 +82,12 @@ export function renderLab(container) {
         <div class="cl-cursor"><label for="${id}-sample">逐拍觀察 <output data-sample-label for="${id}-sample"></output></label><input id="${id}-sample" type="range" min="0" max="800" value="500" step="1" data-sample><div class="cl-jumps"><button type="button" data-jump="step">跳至階躍</button><button type="button" data-jump="loadOn">跳至加載</button><button type="button" data-jump="loadOff">跳至卸載</button></div></div>
         <div class="cl-sample-status" data-status aria-live="polite" aria-atomic="true"></div>
         <details class="cl-extra"><summary>更多指標與量測範圍</summary><div data-extra-metrics></div></details>
+        <div data-frequency-root></div>
       </section>
     </div>
     <p class="cl-model-note">假設：τ = 0.25 s、直流增益 = 1、初始狀態 = 0；目標 0 → 0.6。所有振幅皆無量綱。被控體為教學假設，未由 ASR5000 功率級辨識；控制器依原碼順序、以 JavaScript 雙精度計算。原碼連結需登入具有來源儲存庫讀取權限的 GitHub 帳號。</p>
     <div class="cl-guide" data-lab-guide>${renderLabGuide()}</div>
+    <div class="cl-guide" data-frequency-guide>${renderFrequencyGuide()}</div>
   </div>`;
 
   const find = selector => container.querySelector(selector);
@@ -90,6 +95,7 @@ export function renderLab(container) {
   const numbers = Object.fromEntries([...container.querySelectorAll('[data-number]')].map(el => [el.dataset.number, el]));
   const sample = find('[data-sample]');
   const chart = find('[data-chart]');
+  const frequencyPanel = renderFrequencyPanel(find('[data-frequency-root]'));
   let options = { ...DEFAULTS };
   let result;
   let comparison;
@@ -151,6 +157,7 @@ export function renderLab(container) {
     find('[data-compare-legend]').textContent = options.mode === 'firmware' ? '對照：無條件積分' : '對照：原碼凍結';
     find('[data-compare-legend]').hidden = !find('[data-compare]').checked;
     drawChart();
+    frequencyPanel.update(options, result);
   }
 
   function setOptions(values, presetId = '') {
@@ -184,6 +191,9 @@ export function renderLab(container) {
     else if (button?.dataset.preset) { selectedTime = 5; setOptions(PRESETS.find(p => p.id === button.dataset.preset).options, button.dataset.preset); }
     else if (button?.dataset.jump) { selectedTime = result.events[button.dataset.jump]; sample.value = Math.round(selectedTime / options.ts); drawChart(); }
     else if (button?.hasAttribute('data-guide')) find('[data-lab-guide]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (button?.hasAttribute('data-frequency-nav')) find('.frequency-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (button?.hasAttribute('data-return-controls')) find('.cl-controls').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (button?.hasAttribute('data-frequency-theory')) find('[data-frequency-guide]').scrollIntoView({ behavior: 'smooth', block: 'start' });
     else if (chart.contains(event.target)) {
       const bounds = chart.getBoundingClientRect();
       selectedTime = Math.max(0, Math.min(result.events.end, ((event.clientX - bounds.left) / bounds.width * 900 - 65) / 810 * result.events.end));
@@ -193,5 +203,5 @@ export function renderLab(container) {
   container.addEventListener('input', input);
   container.addEventListener('click', click);
   setOptions(DEFAULTS);
-  return () => { container.removeEventListener('input', input); container.removeEventListener('click', click); };
+  return () => { frequencyPanel.destroy(); container.removeEventListener('input', input); container.removeEventListener('click', click); };
 }

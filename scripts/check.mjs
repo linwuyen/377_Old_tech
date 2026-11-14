@@ -6,13 +6,14 @@ import { controlLessons } from '../lessons/control.js';
 import { sourceExcerpts, equations } from '../lessons/shared.js';
 import { diagramInfo, diagramSVG } from '../lessons/diagrams.js';
 import { renderLabGuide } from '../lab-guide.js';
+import { renderFrequencyGuide } from '../frequency-guide.js';
 const root=new URL('../',import.meta.url);
 const lessons=[...systemLessons,...controlLessons];
 assert.equal(lessons.length,8,'Eight complete lessons are required');
 assert.equal(new Set(lessons.map(l=>l.id)).size,8,'Lesson IDs must be unique');
 assert.deepEqual(lessons.map(l=>Number(l.number)).sort((a,b)=>a-b),[1,2,3,4,5,6,7,8]);
 const validIds=new Set([...lessons.map(l=>l.id),'','lab','sources']);
-const labGuide = renderLabGuide();
+const labGuide = renderLabGuide() + renderFrequencyGuide();
 let citations=0;
 for(const lesson of [...lessons, {id:'lab',number:'LAB',title:'PI closed loop',summary:'Lab model and source',duration:'Interactive',category:'Lab',body:labGuide}]){
   for(const key of ['id','number','title','summary','duration','category','body'])assert.ok(lesson[key],`${lesson.id} requires ${key}`);
@@ -30,7 +31,7 @@ for(const lesson of [...lessons, {id:'lab',number:'LAB',title:'PI closed loop',s
     }
   }
 }
-for(const file of ['index.html','styles.css','deep-content.css','lab.css','app.js','lab.js','lab-guide.js','simulation.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
+for(const file of ['index.html','styles.css','deep-content.css','lab.css','frequency.css','app.js','lab.js','lab-guide.js','simulation.js','frequency.js','frequency-view.js','frequency-guide.js','favicon.svg','.nojekyll','vendor/katex/katex.js','vendor/katex/katex.min.css','vendor/katex/LICENSE'])await access(new URL(file,root));
 const html=await readFile(new URL('index.html',root),'utf8');
 assert.ok(html.includes('lang="zh-Hant"'));
 for(const [,file] of html.matchAll(/(?:href|src)="\.\/([^"#]+)"/g))await access(new URL(file,root));

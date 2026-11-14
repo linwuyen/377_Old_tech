@@ -13,6 +13,7 @@ export const PRESETS = Object.freeze([
   { id: 'overshoot', label: '積分偏強', description: '提高每拍積分，觀察超調與振盪。', options: { ...DEFAULTS, kp: 0.8, ki: 0.2 } },
   { id: 'overload', label: '負載超出能力', description: '負載期間所需輸出大於上限；比較卸載後的飽和恢復。', options: { ...DEFAULTS, kp: 1.2, ki: 0.12, load: 0.9 } },
   { id: 'slow', label: '放慢取樣', description: '保持 Kp、Ki，將週期拉長；同時改變等效積分強度與取樣延遲。', options: { ...DEFAULTS, ts: 0.1 } },
+  { id: 'unstable', label: '線性失穩', description: '較慢取樣搭配較大增益，觀察極點越過單位圓；限幅波形有界不等於線性穩定。', options: { ...DEFAULTS, kp: 6, ki: 0.4, ts: 0.1 } },
 ]);
 
 const TARGET = 0.6;
